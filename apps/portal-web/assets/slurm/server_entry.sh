@@ -5,14 +5,11 @@ function get_port {
 # $1: the length of password
 function get_password {
   local password=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c$1)
-  echo password
+  echo $password
 }
 
 export HOST=$(hostname)
 
 source before.sh
-
-# Write session info
-echo -e "$HOST\n$PORT\n$PASSWORD" >$SERVER_SESSION_INFO
 
 source script.sh

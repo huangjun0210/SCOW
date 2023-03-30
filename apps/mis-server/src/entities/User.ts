@@ -1,9 +1,21 @@
-import { ArrayType, Collection, Entity, IdentifiedReference,
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { Collection, Entity, Enum, IdentifiedReference,
   ManyToOne, OneToMany, PrimaryKey, Property } from "@mikro-orm/core";
 import { StorageQuota } from "src/entities/StorageQuota";
 import { Tenant } from "src/entities/Tenant";
 import { UserAccount } from "src/entities/UserAccount";
-import { DATETIME_TYPE, EntityOrRef, toRef } from "src/utils/orm";
+import { CURRENT_TIMESTAMP, DATETIME_TYPE, EntityOrRef, toRef } from "src/utils/orm";
 
 export enum PlatformRole {
   PLATFORM_FINANCE = "PLATFORM_FINANCE",
@@ -35,16 +47,16 @@ export class User {
   @Property()
     email: string;
 
-  @Property({ columnType: DATETIME_TYPE, defaultRaw: "CURRENT_TIMESTAMP(6)" })
+  @Property({ columnType: DATETIME_TYPE, defaultRaw: CURRENT_TIMESTAMP })
     createTime: Date;
 
   @OneToMany(() => UserAccount, (u) => u.user)
     accounts = new Collection<UserAccount>(this);
 
-  @Property({ type: ArrayType, comment: Object.values(TenantRole).join(", ") })
+  @Enum({ items: () => TenantRole, array: true, comment: Object.values(TenantRole).join(", ") })
     tenantRoles: TenantRole[];
 
-  @Property({ type: ArrayType, comment: Object.values(PlatformRole).join(", ") })
+  @Enum({ items: () => PlatformRole, array: true, comment: Object.values(PlatformRole).join(", ") })
     platformRoles: PlatformRole[];
 
   constructor(init: {

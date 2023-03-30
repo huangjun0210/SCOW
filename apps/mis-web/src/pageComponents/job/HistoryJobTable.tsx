@@ -1,24 +1,36 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { HttpError } from "@ddadaal/next-typed-api-routes-runtime";
-import { Button, DatePicker, Divider, Form, Input, InputNumber, message, Select, Table } from "antd";
-import moment from "moment";
+import { defaultPresets, formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { useDidUpdateEffect } from "@scow/lib-web/build/utils/hooks";
+import { Money } from "@scow/protos/build/common/money";
+import { JobInfo } from "@scow/protos/build/server/job";
+import { App, Button, DatePicker, Divider, Form, Input, InputNumber, Select, Space, Table } from "antd";
+import dayjs from "dayjs";
 import React, { useCallback, useRef, useState } from "react";
 import { useAsync } from "react-async";
 import { api } from "src/apis";
 import { ClusterSelector } from "src/components/ClusterSelector";
 import { FilterFormContainer, FilterFormTabs } from "src/components/FilterFormContainer";
 import { TableTitle } from "src/components/TableTitle";
-import { Money } from "src/generated/common/money";
-import { JobInfo } from "src/generated/server/job";
 import { HistoryJobDrawer } from "src/pageComponents/job/HistoryJobDrawer";
 import type { GetJobInfoSchema } from "src/pages/api/job/jobInfo";
 import type { Cluster } from "src/utils/config";
 import { publicConfig } from "src/utils/config";
-import { defaultRanges, formatDateTime } from "src/utils/datetime";
-import { useDidUpdateEffect } from "src/utils/hooks";
 import { moneyToString, nullableMoneyToString } from "src/utils/money";
 
 interface FilterForm {
-  jobEndTime: [moment.Moment, moment.Moment];
+  jobEndTime: [dayjs.Dayjs, dayjs.Dayjs];
   jobId: number | undefined;
   accountName?: string;
   userId?: string;
@@ -41,12 +53,14 @@ export const JobTable: React.FC<Props> = ({
   showAccount, showUser, showedPrices, priceTexts,
 }) => {
 
+  const { message } = App.useApp();
+
   const rangeSearch = useRef(true);
 
   const [query, setQuery] = useState<FilterForm>(() => {
-    const now = moment();
+    const now = dayjs();
     return {
-      jobEndTime: [now.clone().subtract(1, "week"), now],
+      jobEndTime: [now.subtract(1, "week").startOf("day"), now.endOf("day")],
       jobId: undefined,
       clusters: Object.values(publicConfig.CLUSTERS),
       accountName: typeof accountNames === "string" ? accountNames : undefined,
@@ -54,7 +68,10 @@ export const JobTable: React.FC<Props> = ({
   });
 
   useDidUpdateEffect(() => {
-    setQuery((q) => ({ ...q, accountName: accountNames[0] }));
+    setQuery((q) => ({
+      ...q,
+      accountName: Array.isArray(accountNames) ? accountNames[0] : accountNames,
+    }));
   }, [accountNames]);
 
   const [form] = Form.useForm<FilterForm>();
@@ -81,70 +98,74 @@ export const JobTable: React.FC<Props> = ({
     });
   }, [pageInfo, query]);
 
-  const { data, isLoading } = useAsync({ promiseFn });
+  const { data, isLoading, reload } = useAsync({ promiseFn });
 
   return (
     <div>
       <FilterFormContainer>
-        <Form<FilterForm> form={form} initialValues={query}
+        <Form<FilterForm>
+          form={form}
+          initialValues={query}
           onFinish={async () => {
             setQuery({
               accountName: query.accountName,
-              ...await form.validateFields(),
+              ...(await form.validateFields()),
             });
           }}
         >
-          <FilterFormTabs button={(
-            <Form.Item>
-              <Button type="primary" htmlType="submit">搜索</Button>
-            </Form.Item>
-          )}
-          onChange={(a) => rangeSearch.current = a === "range"}
-          tabs={[
-            { title: "批量搜索", key: "range", node: (
-              <>
-                <Form.Item label="集群" name="clusters">
-                  <ClusterSelector />
-                </Form.Item>
-                {
-                  filterAccountName ? (
-                    <Form.Item label="账户" name="accountName">
-                      <Select style={{ minWidth: 96 }} allowClear>
-                        {(Array.isArray(accountNames) ? accountNames : [accountNames]).map((x) => (
-                          <Select.Option key={x} value={x}>{x}</Select.Option>
-                        ))}
-                      </Select>
-                    </Form.Item>
-                  ) : undefined
-                }
-                {
-                  filterUser ? (
-                    <Form.Item label="用户ID" name="userId">
-                      <Input />
-                    </Form.Item>
-                  ) : undefined
-                }
-                <Form.Item label="作业结束时间" name="jobEndTime">
-                  <DatePicker.RangePicker
-                    showTime
-                    ranges={defaultRanges()}
-                    allowClear={false}
-                  />
-                </Form.Item>
-              </>
-            ) },
-            {
-              title: "精确搜索", key: "precision", node: (
+          <FilterFormTabs
+            button={(
+              <Space>
+                <Button type="primary" htmlType="submit">搜索</Button>
+                <Button onClick={reload} loading={isLoading}>刷新</Button>
+              </Space>
+            )}
+            onChange={(a) => rangeSearch.current = a === "range"}
+            tabs={[
+              { title: "批量搜索", key: "range", node: (
                 <>
                   <Form.Item label="集群" name="clusters">
                     <ClusterSelector />
                   </Form.Item>
-                  <Form.Item label="集群作业ID" name="jobId">
-                    <InputNumber style={{ minWidth: "160px" }} min={1} />
+                  {
+                    filterAccountName ? (
+                      <Form.Item label="账户" name="accountName">
+                        <Select style={{ minWidth: 96 }} allowClear>
+                          {(Array.isArray(accountNames) ? accountNames : [accountNames]).map((x) => (
+                            <Select.Option key={x} value={x}>{x}</Select.Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    ) : undefined
+                  }
+                  {
+                    filterUser ? (
+                      <Form.Item label="用户ID" name="userId">
+                        <Input />
+                      </Form.Item>
+                    ) : undefined
+                  }
+                  <Form.Item label="作业结束时间" name="jobEndTime">
+                    <DatePicker.RangePicker
+                      showTime
+                      presets={defaultPresets}
+                      allowClear={false}
+                    />
                   </Form.Item>
                 </>
               ) },
-          ]}
+              {
+                title: "精确搜索", key: "precision", node: (
+                  <>
+                    <Form.Item label="集群" name="clusters">
+                      <ClusterSelector />
+                    </Form.Item>
+                    <Form.Item label="集群作业ID" name="jobId">
+                      <InputNumber style={{ minWidth: "160px" }} min={1} />
+                    </Form.Item>
+                  </>
+                ) },
+            ]}
           />
         </Form>
       </FilterFormContainer>
@@ -256,26 +277,35 @@ export const JobInfoTable: React.FC<JobInfoTableProps> = ({
         <Table.Column<JobInfo> dataIndex="partition" title="分区" />
         <Table.Column<JobInfo> dataIndex="qos" title="QOS" />
         <Table.Column<JobInfo> dataIndex="jobName" title="作业名" />
-        <Table.Column<JobInfo> dataIndex="timeSubmit" title="提交时间"
+        <Table.Column
+          dataIndex="timeSubmit"
+          title="提交时间"
           render={(time: string) => formatDateTime(time)}
         />
-        <Table.Column<JobInfo> dataIndex="timeEnd" title="结束时间"
+        <Table.Column<JobInfo>
+          dataIndex="timeEnd"
+          title="结束时间"
           render={(time: string) => formatDateTime(time)}
         />
         {
           showedPrices.map((v, i) => (
-            <Table.Column<JobInfo> key={i} dataIndex={`${v}Price`} title={finalPriceText[v]}
+            <Table.Column<JobInfo>
+              key={i}
+              dataIndex={`${v}Price`}
+              title={finalPriceText[v]}
               render={(price: Money) => moneyToString(price) + " 元"}
             />
           ))
         }
-        <Table.Column<JobInfo> title="更多"
+        <Table.Column<JobInfo>
+          title="更多"
           render={(_, r) => <a onClick={() => setPreviewItem(r)}>详情</a>}
         />
       </Table>
       <HistoryJobDrawer
-        show={previewItem !== undefined}
-        item={previewItem} onClose={() => setPreviewItem(undefined)}
+        open={previewItem !== undefined}
+        item={previewItem}
+        onClose={() => setPreviewItem(undefined)}
         showedPrices={showedPrices}
       />
     </>

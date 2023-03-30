@@ -1,12 +1,25 @@
-import { Divider } from "antd";
-import Image from "next/image";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { useDarkMode } from "@scow/lib-web/build/layouts/darkMode";
+import { Divider, Typography } from "antd";
 import { join } from "path";
 import React from "react";
 import { publicConfig } from "src/utils/config";
 import styled from "styled-components";
 
 interface Props {
-  hostname: string | undefined;
+  homeTitle: string;
+  homeText: string;
 }
 
 const Container = styled.div`
@@ -15,7 +28,8 @@ const Container = styled.div`
 const Logo = styled.div`
   position: relative;
   width: 100%;
-  padding-bottom: 8%;
+  display: flex;
+  justify-content: center;
 `;
 
 const TitleAndText = styled.div`
@@ -27,33 +41,38 @@ const TitleAndText = styled.div`
   flex-direction: column;
 `;
 
-const Title = styled.h1`
+const Title = styled(Typography.Title)`
   align-self: center;
 `;
 
-const Text = styled.p`
-  text-indent: 2rem ;
+const Text = styled(Typography.Paragraph)`
 `;
 
-export const CustomizableLogoAndText: React.FC<Props> = ({ hostname }) => {
+export const CustomizableLogoAndText: React.FC<Props> = ({ homeText, homeTitle }) => {
+
+  const { dark } = useDarkMode();
+
+  const query = new URLSearchParams({ type: "banner", preferDark: dark ? "true" : "false" }).toString();
 
   return (
     <Container>
-      <Logo >
-        <Image
+      <Logo>
+        <img
           alt="logo"
-          src={join(process.env.NEXT_PUBLIC_BASE_PATH || "", "/api/logo")}
-          layout="fill"
-          objectFit="contain"
+          src={join(publicConfig.BASE_PATH, "/api/logo?" + query)}
+          style={{
+            objectFit: "contain",
+            maxWidth: "100%",
+          }}
         />
       </Logo>
       <TitleAndText>
         <Title>
-          {(hostname && publicConfig.HOME_TITLES[hostname]) ?? publicConfig.DEFAULT_HOME_TITLE}
+          <div dangerouslySetInnerHTML={{ __html: homeTitle }} />
         </Title>
         <Divider />
         <Text>
-          {(hostname && publicConfig.HOME_TEXTS[hostname]) ?? publicConfig.DEFAULT_HOME_TEXT}
+          <div dangerouslySetInnerHTML={{ __html: homeText }} />
         </Text>
       </TitleAndText>
     </Container>

@@ -1,12 +1,25 @@
-import { Button, Form, Input, message } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { FormLayout } from "@scow/lib-web/build/layouts/FormLayout";
+import { App, Button, Form, Input } from "antd";
 import { NextPage } from "next";
 import React, { useState } from "react";
 import { api } from "src/apis";
 import { requireAuth } from "src/auth/requireAuth";
 import { PageTitle } from "src/components/PageTitle";
-import { FormLayout } from "src/layouts/FormLayout";
 import { TenantRole } from "src/models/User";
 import { publicConfig } from "src/utils/config";
+import { userIdRule } from "src/utils/form";
 import { Head } from "src/utils/head";
 
 interface FormProps {
@@ -16,13 +29,14 @@ interface FormProps {
   comment: string;
 }
 
-const accountNameRegex = publicConfig.ACCOUNT_NAME_PATTERN ? new RegExp(publicConfig.ACCOUNT_NAME_PATTERN) : undefined;
 
 const CreateAccountForm: React.FC = () => {
 
   const [form] = Form.useForm<FormProps>();
 
   const [loading, setLoading] = useState(false);
+
+  const { message } = App.useApp();
 
   const submit = async () => {
     const { accountName, ownerId, ownerName, comment } = await form.validateFields();
@@ -39,31 +53,39 @@ const CreateAccountForm: React.FC = () => {
   };
 
   return (
-    <Form<FormProps> form={form}
+    <Form
+      form={form}
       wrapperCol={{ span: 20 }}
       labelCol={{ span: 4 }}
       labelAlign="right"
       onFinish={submit}
     >
-      <Form.Item<FormProps> name="accountName" label="账户名"
+      <Form.Item
+        name="accountName"
+        label="账户名"
         rules={[
           { required: true },
-          { pattern: /^[a-z0-9_]+$/, message: "只能由小写英文字符、数字和下划线组成" },
-          ...accountNameRegex
-            ? [{
-              pattern: accountNameRegex,
-              message: publicConfig.ACCOUNT_NAME_PATTERN_MESSAGE }]
-            : [],
+          ...(publicConfig.ACCOUNT_NAME_PATTERN ? [{
+            pattern: new RegExp(publicConfig.ACCOUNT_NAME_PATTERN),
+            message: publicConfig.ACCOUNT_NAME_PATTERN_MESSAGE }] : []),
         ]}
       >
         <Input />
       </Form.Item>
-      <Form.Item<FormProps> name="ownerId" label="拥有者用户ID"
-        rules={[{ required: true }]}
+      <Form.Item
+        name="ownerId"
+        label="拥有者用户ID"
+        rules={[
+          { required: true },
+          userIdRule,
+        ]}
+
       >
         <Input />
       </Form.Item>
-      <Form.Item<FormProps> name="ownerName" label="拥有者姓名"
+      <Form.Item
+        name="ownerName"
+        label="拥有者姓名"
         rules={[{ required: true }]}
       >
         <Input />

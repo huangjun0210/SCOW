@@ -1,12 +1,23 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { defaultPresets, formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { useDidUpdateEffect } from "@scow/lib-web/build/utils/hooks";
 import { Button, DatePicker, Form, Table } from "antd";
-import { useForm } from "antd/lib/form/Form";
-import moment from "moment";
+import dayjs from "dayjs";
 import { useCallback, useState } from "react";
 import { useAsync } from "react-async";
 import { api } from "src/apis";
 import { FilterFormContainer } from "src/components/FilterFormContainer";
-import { defaultRanges, formatDateTime } from "src/utils/datetime";
-import { useDidUpdateEffect } from "src/utils/hooks";
 
 interface Props {
   accountName: string;
@@ -14,14 +25,14 @@ interface Props {
 }
 
 interface FilterForm {
-  time: [moment.Moment, moment.Moment],
+  time: [dayjs.Dayjs, dayjs.Dayjs];
 }
 
-const today = moment().endOf("day");
+const today = dayjs().endOf("day");
 
 export const ChargeTable: React.FC<Props> = ({ accountName, showAccountName }) => {
 
-  const [form] = useForm<FilterForm>();
+  const [form] = Form.useForm<FilterForm>();
 
   const [query, setQuery] = useState({
     time: [today.clone().subtract(1, "year"), today],
@@ -54,7 +65,7 @@ export const ChargeTable: React.FC<Props> = ({ accountName, showAccountName }) =
           }}
         >
           <Form.Item label="时间" name="time">
-            <DatePicker.RangePicker allowClear={false} ranges={defaultRanges()} />
+            <DatePicker.RangePicker allowClear={false} presets={defaultPresets} />
           </Form.Item>
           <Form.Item label="总数">
             <strong>
@@ -83,7 +94,7 @@ export const ChargeTable: React.FC<Props> = ({ accountName, showAccountName }) =
           )
         }
         <Table.Column dataIndex="time" title="扣费日期" render={(v) => formatDateTime(v)} />
-        <Table.Column dataIndex="amount" title="扣费金额" render={(v) => v.toFixed(3)}/>
+        <Table.Column dataIndex="amount" title="扣费金额" render={(v) => v.toFixed(3)} />
         <Table.Column dataIndex="type" title="类型" />
         <Table.Column dataIndex="comment" title="备注" />
       </Table>

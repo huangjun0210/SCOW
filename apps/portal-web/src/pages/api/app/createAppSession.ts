@@ -1,6 +1,24 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { asyncUnaryCall } from "@ddadaal/tsgrpc-client";
+import { status } from "@grpc/grpc-js";
+import { AppServiceClient } from "@scow/protos/build/portal/app";
+import { join } from "path";
 import { authenticate } from "src/auth/server";
-import { getClusterOps } from "src/clusterops";
+import { getClient } from "src/utils/client";
+import { publicConfig } from "src/utils/config";
 import { route } from "src/utils/route";
+import { handlegRPCError } from "src/utils/server";
 
 export interface CreateAppSessionSchema {
   method: "POST";
@@ -13,6 +31,7 @@ export interface CreateAppSessionSchema {
     qos: string | undefined;
     coreCount: number;
     maxTime: number;
+    customAttributes: { [key: string]: string };
   }
 
   responses: {
@@ -22,6 +41,7 @@ export interface CreateAppSessionSchema {
     };
 
     400: {
+      code: "INVALID_INPUT";
       message: string;
     }
 
@@ -42,32 +62,33 @@ const auth = authenticate(() => true);
 export default /* #__PURE__*/route<CreateAppSessionSchema>("CreateAppSessionSchema", async (req, res) => {
 
 
-
   const info = await auth(req, res);
 
   if (!info) { return; }
 
-  const { appId, cluster, coreCount, partition, qos, account, maxTime } = req.body;
+  const { appId, cluster, coreCount, partition, qos, account, maxTime, customAttributes } = req.body;
 
-  const clusterops = getClusterOps(cluster);
+  const client = getClient(AppServiceClient);
 
-  const reply = await clusterops.app.createApp({
+  const proxyBasePath = join(publicConfig.BASE_PATH, "/api/proxy");
+
+  return await asyncUnaryCall(client, "createAppSession", {
     appId,
+    cluster,
     userId: info.identityId,
     coreCount,
     account,
     maxTime,
     partition,
     qos,
-  }, req.log);
+    proxyBasePath,
+    customAttributes,
+  }).then((reply) => {
+    return { 200: { jobId: reply.jobId, sessionId: reply.sessionId } };
+  }, handlegRPCError({
+    [status.INTERNAL]: (e) => ({ 409: { code: "SBATCH_FAILED" as const, message: e.details } }),
+    [status.NOT_FOUND]: (e) => ({ 404: { code: "APP_NOT_FOUND" as const, message: e.details } }),
+    [status.INVALID_ARGUMENT]: (e) => ({ 400: { code: "INVALID_INPUT" as const, message: e.details } }),
+  }));
 
-  if (reply.code === "SBATCH_FAILED") {
-    return { 409: { code: "SBATCH_FAILED", message: reply.message } };
-  }
-
-  if (reply.code === "APP_NOT_FOUND") {
-    return { 404: { code: "APP_NOT_FOUND" } };
-  }
-
-  return { 200: { jobId: reply.jobId, sessionId: reply.sessionId } };
 });

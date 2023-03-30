@@ -1,25 +1,38 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { plugin } from "@ddadaal/tsgrpc-server";
 import { ServiceError } from "@grpc/grpc-js";
 import { Status } from "@grpc/grpc-js/build/src/constants";
-import { UniqueConstraintViolationException } from "@mikro-orm/core";
+import { createUser } from "@scow/lib-auth";
 import { decimalToMoney } from "@scow/lib-decimal";
-import { clusters } from "src/config/clusters";
-import { misConfig } from "src/config/mis";
-import { Account } from "src/entities/Account";
-import { StorageQuota } from "src/entities/StorageQuota";
-import { Tenant } from "src/entities/Tenant";
-import { User } from "src/entities/User";
-import { UserAccount, UserRole, UserStatus } from "src/entities/UserAccount";
 import {
   AccountStatus,
-  GetAccountUsersReply,
+  GetAccountUsersResponse,
   platformRoleFromJSON,
-  QueryIsUserInAccountReply,
+  platformRoleToJSON,
+  QueryIsUserInAccountResponse,
   tenantRoleFromJSON,
+  tenantRoleToJSON,
   UserRole as PFUserRole, UserServiceServer,
   UserServiceService,
-  UserStatus as PFUserStatus } from "src/generated/server/user";
-import { fetch } from "undici";
+  UserStatus as PFUserStatus } from "@scow/protos/build/server/user";
+import { blockUserInAccount, unblockUserInAccount } from "src/bl/block";
+import { misConfig } from "src/config/mis";
+import { Account } from "src/entities/Account";
+import { PlatformRole, TenantRole, User } from "src/entities/User";
+import { UserAccount, UserRole, UserStatus } from "src/entities/UserAccount";
+import { createUserInDatabase, insertKeyToNewUser } from "src/utils/createUser";
+import { paginationProps } from "src/utils/orm";
 
 export const userServiceServer = plugin((server) => {
 
@@ -31,7 +44,7 @@ export const userServiceServer = plugin((server) => {
         account: { accountName, tenant: { name: tenantName } },
       }, { populate: ["user", "user.storageQuotas"]});
 
-      return [GetAccountUsersReply.fromPartial({
+      return [GetAccountUsersResponse.fromPartial({
         results: accountUsers.map((x) => ({
           userId: x.user.$.userId,
           name: x.user.$.name,
@@ -55,7 +68,7 @@ export const userServiceServer = plugin((server) => {
         account: { accountName, tenant: { name: tenantName } },
       });
 
-      return [QueryIsUserInAccountReply.fromPartial({
+      return [QueryIsUserInAccountResponse.fromPartial({
         result: user !== null,
       })];
     },
@@ -69,7 +82,7 @@ export const userServiceServer = plugin((server) => {
 
       if (!user) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message: `User ${userId}, tenant ${tenantName} is not found`,
         };
       }
 
@@ -105,7 +118,7 @@ export const userServiceServer = plugin((server) => {
 
       if (reply.code === "NOT_FOUND") {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message: `User ${userId}  is not found.`,
         };
       }
 
@@ -128,18 +141,19 @@ export const userServiceServer = plugin((server) => {
       if (!account || !user) {
         throw <ServiceError>{
           code: Status.NOT_FOUND,
+          message: `Account ${accountName} or user ${userId}, tenant ${tenantName} is not found.`,
         };
       }
 
       if (account.users.getItems().some((x) => x.user.getEntity().userId === userId)) {
         throw <ServiceError>{
-          code: Status.ALREADY_EXISTS,
+          code: Status.ALREADY_EXISTS, message: `User ${userId} already in the account ${accountName}.`,
         };
       }
 
-      await server.ext.clusters.callOnAll(logger,
-        async (ops) => ops.user.addUser({ request: { accountName, userId }, logger }),
-      );
+      await server.ext.clusters.callOnAll(logger, async (ops) => {
+        return await ops.user.addUserToAccount({ request: { accountName, userId }, logger });
+      });
 
       const newUserAccount = new UserAccount({
         account,
@@ -165,13 +179,14 @@ export const userServiceServer = plugin((server) => {
 
       if (!userAccount) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message:`User ${userId} or account ${accountName}  is not found.`,
         };
       }
 
       if (userAccount.role === UserRole.OWNER) {
         throw <ServiceError>{
           code: Status.OUT_OF_RANGE,
+          message: `User ${userId} is the owner of the account ${accountName}。`,
         };
       }
 
@@ -195,17 +210,17 @@ export const userServiceServer = plugin((server) => {
 
       if (!user) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message: `User ${userId} or account ${accountName} is not found.`,
         };
       }
 
       if (user.status === UserStatus.BLOCKED) {
         throw <ServiceError> {
-          code: Status.FAILED_PRECONDITION,
+          code: Status.FAILED_PRECONDITION, message: `User ${userId}  is already blocked.`,
         };
       }
 
-      await user.block(server.ext, logger);
+      await blockUserInAccount(user, server.ext, logger);
 
       user.status = UserStatus.BLOCKED;
 
@@ -224,17 +239,17 @@ export const userServiceServer = plugin((server) => {
 
       if (!user) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message:`User ${userId} or account ${accountName}  is not found.`,
         };
       }
 
       if (user.status === UserStatus.UNBLOCKED) {
         throw <ServiceError> {
-          code: Status.FAILED_PRECONDITION,
+          code: Status.FAILED_PRECONDITION, message: `User ${userId}  is already unblocked.`,
         };
       }
 
-      await user.unblock(server.ext, logger);
+      await unblockUserInAccount(user, server.ext, logger);
 
       user.status = UserStatus.UNBLOCKED;
 
@@ -253,13 +268,13 @@ export const userServiceServer = plugin((server) => {
 
       if (!user) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message:`User ${userId} or account ${accountName}  is not found.`,
         };
       }
 
       if (user.role === UserRole.ADMIN) {
         throw <ServiceError> {
-          code: Status.FAILED_PRECONDITION,
+          code: Status.FAILED_PRECONDITION, message: `User ${userId} is already admin.`,
         };
       }
 
@@ -279,13 +294,13 @@ export const userServiceServer = plugin((server) => {
 
       if (!user) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message:`User ${userId} or account ${accountName}  is not found.`,
         };
       }
 
       if (user.role === UserRole.USER) {
         throw <ServiceError> {
-          code: Status.FAILED_PRECONDITION,
+          code: Status.FAILED_PRECONDITION, message: `User ${userId} is already not admin.`,
         };
       }
 
@@ -295,62 +310,50 @@ export const userServiceServer = plugin((server) => {
       return [{}];
     },
 
-    createUser: async ({ request, em, logger }) => {
+    createUser: async ({ request, em }) => {
       const { name, tenantName, email, identityId, password } = request;
-
-      const tenant = await em.findOne(Tenant, { name: tenantName });
-      if (!tenant) {
-        throw <ServiceError> { code: Status.NOT_FOUND, details: "Tenant is not found." };
-      }
-
-      const user = new User({ name, userId: identityId, tenant, email });
-
-      user.storageQuotas.add(...Object.keys(clusters).map((x) => new StorageQuota({
-        cluster: x,
-        storageQuota: 0,
-        user: user!,
-      })));
-
-      try {
-        await em.persistAndFlush(user);
-      } catch (e) {
-        if (e instanceof UniqueConstraintViolationException) {
-          throw <ServiceError> { code: Status.ALREADY_EXISTS };
-        } else {
-          throw e;
-        }
-      }
-
+      const user = await createUserInDatabase(identityId, name, email, tenantName, server.logger, em)
+        .catch((e) => {
+          if (e.code === Status.ALREADY_EXISTS) {
+            throw <ServiceError> {
+              code: Status.ALREADY_EXISTS,
+              message: `User with userId ${identityId} already exists in scow.`,
+              details: "EXISTS_IN_SCOW",
+            };
+          }
+          throw <ServiceError> {
+            code: Status.INTERNAL,
+            message: `Error creating user with userId ${identityId} in database.` };
+        });
       // call auth
-      const rep = await fetch(misConfig.authUrl + "/user", {
-        method: "POST",
-        body: JSON.stringify({
-          identityId,
-          id: user.id,
-          mail: email,
-          name: name,
-          password,
-        }),
-        headers: {
-          "content-type": "application/json",
-        },
-      });
+      const createdInAuth = await createUser(misConfig.authUrl,
+        { identityId: user.userId, id: user.id, mail: user.email, name: user.name, password },
+        server.logger)
+        .then(async () => {
+          // insert public key
+          await insertKeyToNewUser(identityId, password, server.logger)
+            .catch(() => {});
+          return true;
+        })
+        // If the call of creating user of auth fails,  delete the user created in the database.
+        .catch(async (e) => {
+          if (e.status === 409) {
+            server.logger.warn("User exists in auth.");
+            return false;
+          } else {
+            // 回滚数据库
+            await em.removeAndFlush(user);
+            server.logger.error("Error creating user in auth.", e);
+            throw <ServiceError> {
+              code: Status.INTERNAL,
+              message: `Error creating user with userId ${identityId} in auth.` };
+          }
+        });
 
-      logger.info("Calling auth completed. %o", rep);
-
-      if (!rep.ok) {
-        await em.removeAndFlush(user);
-
-        if (rep.status === 409) {
-          throw <ServiceError> { code: Status.ALREADY_EXISTS };
-        }
-
-        logger.info("Error creating user in auth. code: %d, body: %o", rep.status, await rep.text());
-
-        throw <ServiceError> { code: Status.INTERNAL, message: "Error creating user in auth" };
-      }
-
-      return [{ id: user.id }];
+      return [{
+        createdInAuth: createdInAuth,
+        id: user.id,
+      }];
     },
 
     deleteUser: async ({ request, em }) => {
@@ -358,7 +361,7 @@ export const userServiceServer = plugin((server) => {
 
       const user = await em.findOne(User, { userId, tenant: { name: tenantName } });
       if (!user) {
-        throw <ServiceError>{ code: Status.NOT_FOUND };
+        throw <ServiceError>{ code: Status.NOT_FOUND, message:`User ${userId} is not found.` };
       }
 
       // find if the user is an owner of any account
@@ -370,7 +373,7 @@ export const userServiceServer = plugin((server) => {
       if (accountUser) {
         throw <ServiceError>{
           code: Status.FAILED_PRECONDITION,
-          details: "User is an owner of an account.",
+          details: `User ${userId} is an owner of an account.`,
         };
       }
 
@@ -384,7 +387,7 @@ export const userServiceServer = plugin((server) => {
       const user = await em.findOne(User, { userId, tenant: { name: tenantName } }, { fields: ["name"]});
 
       if (!user) {
-        throw <ServiceError> { code: Status.NOT_FOUND };
+        throw <ServiceError> { code: Status.NOT_FOUND, message:`User ${userId} is not found.` };
       }
 
       return [{ name: user.name }];
@@ -402,8 +405,8 @@ export const userServiceServer = plugin((server) => {
         email: x.email,
         name: x.name,
         userId: x.userId,
-        createTime: x.createTime,
-        tenantRoles: x.tenantRoles,
+        createTime: x.createTime.toISOString(),
+        tenantRoles: x.tenantRoles.map(tenantRoleFromJSON),
         accountAffiliations: x.accounts.getItems().map((x) => ({
           accountName: x.account.getEntity().accountName,
           role: PFUserRole[x.role],
@@ -421,7 +424,7 @@ export const userServiceServer = plugin((server) => {
       }, { populate: ["accounts", "accounts.account", "tenant"]});
 
       if (!user) {
-        throw <ServiceError>{ code: Status.NOT_FOUND };
+        throw <ServiceError>{ code: Status.NOT_FOUND, message:`User ${userId} is not found.` };
       }
 
       return [{
@@ -436,6 +439,133 @@ export const userServiceServer = plugin((server) => {
       }];
     },
 
-  });
+    getAllUsers: async ({ request, em }) => {
 
+      const { page, pageSize, idOrName } = request;
+
+      const [users, count] = await em.findAndCount(User, idOrName ? {
+        $or: [
+          { userId: idOrName },
+          { name: idOrName },
+        ],
+      } : {}, {
+        ...paginationProps(page, pageSize || 10),
+        populate: ["tenant", "accounts", "accounts.account"],
+      });
+
+      return [{
+        totalCount: count,
+        platformUsers: users.map((x) => ({
+          userId: x.userId,
+          name: x.name,
+          availableAccounts: x.accounts.getItems()
+            .filter((ua) => ua.status === UserStatus.UNBLOCKED)
+            .map((ua) => {
+              return ua.account.getProperty("accountName");
+            }),
+          tenantName: x.tenant.$.name,
+          createTime: x.createTime.toISOString(),
+          platformRoles: x.platformRoles.map(platformRoleFromJSON),
+        })),
+      }];
+    },
+
+    setPlatformRole: async ({ request, em }) => {
+      const { userId, roleType } = request;
+      const dbRoleType: PlatformRole = PlatformRole[platformRoleToJSON(roleType)];
+
+      const user = await em.findOne(User, { userId: userId });
+
+      if (!user) {
+        throw <ServiceError>{
+          code: Status.NOT_FOUND, message: `User ${userId} is not found.`,
+        };
+      }
+
+      if (user.platformRoles.includes(dbRoleType)) {
+        throw <ServiceError> {
+          code: Status.FAILED_PRECONDITION, message: `User ${userId} is already this role.`,
+        };
+      }
+
+      user.platformRoles.push(dbRoleType);
+      await em.flush();
+
+      return [{}];
+    },
+
+    unsetPlatformRole: async ({ request, em }) => {
+      const { userId, roleType } = request;
+      const dbRoleType: PlatformRole = PlatformRole[platformRoleToJSON(roleType)];
+
+      const user = await em.findOne(User, { userId: userId });
+
+      if (!user) {
+        throw <ServiceError>{
+          code: Status.NOT_FOUND, message: `User ${userId} is not found.`,
+        };
+      }
+
+      if (!user.platformRoles.includes(dbRoleType)) {
+        throw <ServiceError> {
+          code: Status.FAILED_PRECONDITION, message: `User ${userId} is already not this role.`,
+        };
+      }
+
+      user.platformRoles = user.platformRoles.filter((item) =>
+        item !== dbRoleType);
+      await em.flush();
+
+      return [{}];
+    },
+
+    setTenantRole: async ({ request, em }) => {
+      const { userId, roleType } = request;
+      const dbRoleType: TenantRole = TenantRole[tenantRoleToJSON(roleType)];
+
+      const user = await em.findOne(User, { userId: userId });
+
+      if (!user) {
+        throw <ServiceError>{
+          code: Status.NOT_FOUND, message: `User ${userId} is not found.`,
+        };
+      }
+
+      if (user.tenantRoles.includes(dbRoleType)) {
+        throw <ServiceError> {
+          code: Status.FAILED_PRECONDITION, message: `User ${userId} is already this role.`,
+        };
+      }
+
+      user.tenantRoles.push(dbRoleType);
+      await em.flush();
+
+      return [{}];
+    },
+
+    unsetTenantRole: async ({ request, em }) => {
+      const { userId, roleType } = request;
+      const dbRoleType: TenantRole = TenantRole[tenantRoleToJSON(roleType)];
+
+      const user = await em.findOne(User, { userId: userId });
+
+      if (!user) {
+        throw <ServiceError>{
+          code: Status.NOT_FOUND, message: `User ${userId} is not found.`,
+        };
+      }
+
+      if (!user.tenantRoles.includes(dbRoleType)) {
+        throw <ServiceError> {
+          code: Status.FAILED_PRECONDITION, message: `User ${userId} is already not this role.`,
+        };
+      }
+
+      user.tenantRoles = user.tenantRoles.filter((item) =>
+        item !== dbRoleType);
+      await em.flush();
+
+      return [{}];
+    },
+  });
 });

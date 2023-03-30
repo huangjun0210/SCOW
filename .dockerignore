@@ -3,4 +3,6 @@
 **/node_modules
 **/generated
 **/.next
+**/api-routes-schemas.json
 internal
+.pnpm-store

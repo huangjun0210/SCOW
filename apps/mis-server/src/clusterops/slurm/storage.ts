@@ -1,5 +1,18 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { ChangeStorageQuotaMode, StorageOps } from "src/clusterops/api/storage";
 import { SlurmClusterInfo } from "src/clusterops/slurm";
+import { throwIfNotReturn0 } from "src/clusterops/slurm/utils/slurm";
 
 export const slurmStorageOps = ({ executeSlurmScript }: SlurmClusterInfo): StorageOps => {
   return {
@@ -10,6 +23,8 @@ export const slurmStorageOps = ({ executeSlurmScript }: SlurmClusterInfo): Stora
       if (result.code === 2) {
         return { code: "NOT_FOUND" };
       }
+
+      throwIfNotReturn0(result);
 
       /**
        * format is
@@ -72,6 +87,8 @@ export const slurmStorageOps = ({ executeSlurmScript }: SlurmClusterInfo): Stora
       if (result.code === 4) {
         return { code: "NOT_FOUND" };
       }
+
+      throwIfNotReturn0(result);
 
       // TODO handle output format
       return { code: "OK", currentQuota: 10 };

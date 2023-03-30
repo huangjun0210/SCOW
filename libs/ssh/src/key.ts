@@ -1,6 +1,20 @@
-import fs from "fs";
-import type { Logger } from "pino";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
 
+import fs from "fs";
+import { join } from "path";
+import type { Logger } from "ts-log";
+
+import { sftpChmod, sftpChown, sftpWriteFile } from "./sftp";
 import { sshConnect } from "./ssh";
 export interface KeyPair {
   publicKey: string;
@@ -22,40 +36,40 @@ export function getKeyPair(privateKeyPath: string, publicKeyPath: string): KeyPa
  * @param rootKeyPair the key pair of root
  * @param logger the logger
  */
-export async function insertKey(
+export async function insertKeyAsRoot(
   user: string, host: string, rootKeyPair: KeyPair, logger: Logger,
 ) {
-
   // https://superuser.com/a/484280
-  const script = (homeDir: string) => `
-
-    if ! [ -f "${homeDir}" ]; then
-      mkdir -p "${homeDir}"
-      chown "${user}:${user}" "${homeDir}"
-    fi
-
-    if ! [ -f "${homeDir}/.ssh/authorized_keys" ]; then
-      mkdir -p "${homeDir}/.ssh"
-      touch "${homeDir}/.ssh/authorized_keys"
-
-      chmod 700 "${homeDir}/.ssh"
-      chmod 644 "${homeDir}/.ssh/authorized_keys"
-      chown "${user}:${user}" "${homeDir}/.ssh"
-      chown "${user}:${user}" "${homeDir}/.ssh/authorized_keys"
-    fi
-
-    if ! grep -q "${rootKeyPair.publicKey}" "${homeDir}/.ssh/authorized_keys"; then
-      echo -e "${rootKeyPair.publicKey}\n" >> "${homeDir}/.ssh/authorized_keys"
-    fi
-    `;
-
-
   logger.info("Adding key to user %s to %s", user, host);
 
   await sshConnect(host, "root", rootKeyPair, logger, async (ssh) => {
     const homeDir = await ssh.execCommand(`eval echo ~${user}`);
+    const userID = await ssh.execCommand(`id -u ${user}`);
+    const userGID = await ssh.execCommand(`id -g ${user}`);
 
-    await ssh.execCommand(script(homeDir.stdout.trim()));
+    const userHomeDir = homeDir.stdout.trim();
+
+    const sftp = await ssh.requestSFTP();
+    // make sure user home directory exists.
+    await ssh.mkdir(userHomeDir, undefined, sftp);
+
+    const sshDir = join(userHomeDir, ".ssh");
+
+    await ssh.mkdir(sshDir, undefined, sftp);
+    // root create the directory, so we need to change the owner
+    await sftpChown(sftp)(userHomeDir, Number(userID.stdout.trim()), Number(userGID.stdout.trim()));
+
+    const keyFilePath = join(sshDir, "authorized_keys");
+    await sftpChmod(sftp)(sshDir, "700");
+    await sftpWriteFile(sftp)(keyFilePath, rootKeyPair.publicKey);
+    logger.info("Writing key to user %s, userID %s to %s in file %s", user, userID, host, keyFilePath);
+
+    await sftpChmod(sftp)(keyFilePath, "644");
+
+    await sftpChown(sftp)(sshDir, Number(userID.stdout.trim()), Number(userGID.stdout.trim()));
+
+    await sftpChown(sftp)(keyFilePath, Number(userID.stdout.trim()), Number(userGID.stdout.trim()));
+
   });
 }
 

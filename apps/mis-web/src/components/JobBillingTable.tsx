@@ -1,5 +1,18 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Table } from "antd";
-import { ColumnsType } from "antd/lib/table";
+import { ColumnsType } from "antd/es/table";
+import { AmountStrategyText } from "src/models/job";
 import { publicConfig } from "src/utils/config";
 
 export interface JobBillingTableItem {
@@ -61,7 +74,7 @@ const columns: ColumnsType<JobBillingTableItem> = [
   { dataIndex: "price", title: "单价（元）", key: "index", render: (_, r) => ({
     children: r.priceItem?.price ?? "未定义",
   }) },
-  { dataIndex: "amount", title: "计量方式", key: "index", render: (_, r) => ({
+  { dataIndex: "amount", title: AmountStrategyText, key: "index", render: (_, r) => ({
     children: r.priceItem?.amount ?? "未定义",
   }) },
   { dataIndex: "comment", title: "说明", key: "index", render: (_, r) => ({
@@ -78,9 +91,12 @@ interface Props {
 export const JobBillingTable: React.FC<Props> = ({ data, loading }) => {
   return (
     <Table
-      dataSource={data} columns={columns}
-      scroll={{ x: 800 }} size="middle"
-      bordered pagination={false}
+      dataSource={data}
+      columns={columns}
+      scroll={{ x: 800 }}
+      size="middle"
+      bordered
+      pagination={false}
       loading={loading}
     />
   );

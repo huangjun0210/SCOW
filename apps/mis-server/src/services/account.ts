@@ -1,14 +1,28 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { plugin } from "@ddadaal/tsgrpc-server";
 import { ServiceError } from "@grpc/grpc-js";
 import { Status } from "@grpc/grpc-js/build/src/constants";
 import { LockMode, UniqueConstraintViolationException } from "@mikro-orm/core";
 import { decimalToMoney } from "@scow/lib-decimal";
+import { AccountServiceServer, AccountServiceService,
+  BlockAccountResponse_Result } from "@scow/protos/build/server/account";
+import { blockAccount, unblockAccount } from "src/bl/block";
 import { Account } from "src/entities/Account";
 import { AccountWhitelist } from "src/entities/AccountWhitelist";
 import { Tenant } from "src/entities/Tenant";
 import { User } from "src/entities/User";
 import { UserAccount, UserRole as EntityUserRole, UserStatus } from "src/entities/UserAccount";
-import { AccountServiceServer, AccountServiceService, BlockAccountReply_Result } from "src/generated/server/account";
 import { toRef } from "src/utils/orm";
 
 export const accountServiceServer = plugin((server) => {
@@ -17,46 +31,58 @@ export const accountServiceServer = plugin((server) => {
     blockAccount: async ({ request, em, logger }) => {
       const { accountName } = request;
 
-      await em.transactional(async (em) => {
+      return await em.transactional(async (em) => {
         const account = await em.findOne(Account, {
           accountName,
         }, { lockMode: LockMode.PESSIMISTIC_WRITE });
 
         if (!account) {
-          throw <ServiceError>{ code: Status.NOT_FOUND };
+          throw <ServiceError>{
+            code: Status.NOT_FOUND, message: `Account ${accountName} is not found`,
+          };
         }
 
-        if (account.blocked) {
-          return [{ result: BlockAccountReply_Result.ALREADY_BLOCKED }];
+        const result = await blockAccount(account, server.ext.clusters, logger);
+
+        if (result === "AlreadyBlocked") {
+          return [{ result: BlockAccountResponse_Result.ALREADY_BLOCKED }];
         }
 
+        if (result === "Whitelisted") {
+          logger.warn("Trying to block a whitelisted account %s", accountName);
+          return [{ result: BlockAccountResponse_Result.WHITELISTED }];
+        }
 
-        await account.block(server.ext.clusters, logger);
+        return [{ result: BlockAccountResponse_Result.OK }];
       });
-
-      return [{ result: BlockAccountReply_Result.OK }];
     },
 
     unblockAccount: async ({ request, em, logger }) => {
       const { accountName } = request;
 
-      await em.transactional(async (em) => {
+      return await em.transactional(async (em) => {
         const account = await em.findOne(Account, {
           accountName,
         }, { lockMode: LockMode.PESSIMISTIC_WRITE });
 
         if (!account) {
-          throw <ServiceError>{ code: Status.NOT_FOUND };
+          throw <ServiceError>{
+            code: Status.NOT_FOUND, message: `Account ${accountName} is not found`,
+          };
         }
 
         if (!account.blocked) {
           return [{ executed: false }];
         }
 
-        await account.unblock(server.ext.clusters, logger);
-      });
+        const result = await unblockAccount(account, server.ext.clusters, logger);
+        if (result === "ALREADY_UNBLOCKED") {
+          return [{ executed: false }];
+        }
 
-      return [{ executed: true }];
+        return [{ executed: true }];
+
+      });
     },
 
     getAccounts: async ({ request, em }) => {
@@ -100,12 +126,16 @@ export const accountServiceServer = plugin((server) => {
       const user = await em.findOne(User, { userId: ownerId });
 
       if (!user) {
-        throw <ServiceError> { code: Status.NOT_FOUND };
+        throw <ServiceError> {
+          code: Status.NOT_FOUND, message: `User ${ownerId} is not found`,
+        };
       }
 
       const tenant = await em.findOne(Tenant, { name: tenantName });
       if (!tenant) {
-        throw <ServiceError> { code: Status.NOT_FOUND };
+        throw <ServiceError> {
+          code: Status.NOT_FOUND, message: `Tenant ${tenantName} is not found`,
+        };
       }
 
       // insert the account now to avoid future conflict
@@ -120,7 +150,7 @@ export const accountServiceServer = plugin((server) => {
       } catch (e) {
         if (e instanceof UniqueConstraintViolationException) {
           throw <ServiceError>{
-            code: Status.ALREADY_EXISTS,
+            code: Status.ALREADY_EXISTS, message: `Account ${accountName} already exists.`,
           };
         }
       }
@@ -134,12 +164,33 @@ export const accountServiceServer = plugin((server) => {
       logger.info("Creating account in cluster.");
       await server.ext.clusters.callOnAll(
         logger,
-        async (ops) => ops.account.createAccount({
-          request: { accountName, ownerId },
-          logger,
-        }),
+        async (ops) => {
+          const resp = await ops.account.createAccount({
+            request: { accountName, ownerId },
+            logger,
+          });
+
+          if (resp.code === "ALREADY_EXISTS") {
+            // the account is already exists. add the owner to the account manually
+            await ops.user.addUserToAccount({
+              request: { accountName, userId: user.userId },
+              logger,
+            });
+          }
+
+          const blockResp = await ops.account.blockAccount({
+            request: { accountName },
+            logger,
+          });
+          if (blockResp.code === "NOT_FOUND") {
+            throw <ServiceError>{
+              code: Status.INTERNAL, message: `Account ${accountName} hasn't been created. block failed`,
+            };
+          }
+        },
       ).catch(async (e) => {
         await rollback(e);
+        throw e;
       });
 
       logger.info("Account has been created in cluster.");
@@ -169,7 +220,7 @@ export const accountServiceServer = plugin((server) => {
             accountName: x.account.$.accountName,
             comment: x.comment,
             operatorId: x.operatorId,
-            addTime: x.time,
+            addTime: x.time.toISOString(),
             ownerId: accountOwner.id + "",
             ownerName: accountOwner.name,
           };
@@ -184,7 +235,9 @@ export const accountServiceServer = plugin((server) => {
       const account = await em.findOne(Account, { accountName, tenant: { name: tenantName } });
 
       if (!account) {
-        throw <ServiceError>{ code: Status.NOT_FOUND };
+        throw <ServiceError>{
+          code: Status.NOT_FOUND, message: `Account ${accountName} is not found`,
+        };
       }
 
       if (account.whitelist) {
@@ -199,7 +252,7 @@ export const accountServiceServer = plugin((server) => {
       });
       account.whitelist = toRef(whitelist);
 
-      await account.unblock(server.ext.clusters, logger);
+      await unblockAccount(account, server.ext.clusters, logger);
       await em.persistAndFlush(whitelist);
 
       logger.info("Add account %s to whitelist by %s with comment %s",
@@ -217,7 +270,9 @@ export const accountServiceServer = plugin((server) => {
       const account = await em.findOne(Account, { accountName, tenant: { name: tenantName } });
 
       if (!account) {
-        throw <ServiceError>{ code: Status.NOT_FOUND };
+        throw <ServiceError>{
+          code: Status.NOT_FOUND, message: `Account ${accountName} is not found`,
+        };
       }
 
       if (!account.whitelist) {
@@ -233,7 +288,7 @@ export const accountServiceServer = plugin((server) => {
 
       if (account.balance.isNegative()) {
         logger.info("Account %s is out of balance and not whitelisted. Block the account.", account.accountName);
-        await account.block(server.ext.clusters, logger);
+        await blockAccount(account, server.ext.clusters, logger);
       }
 
       await em.flush();

@@ -1,13 +1,26 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Static, Type } from "@sinclair/typebox";
-import { FastifyReply } from "fastify";
 import fp from "fastify-plugin";
-import { AUTH_REDIRECT_URL } from "src/config/env";
+import { redirectToWeb, validateCallbackHostname } from "src/auth/callback";
 
 const QuerystringSchema = Type.Object({
+  callbackUrl: Type.String(),
   token: Type.String(),
 });
 
 enum ErrorCode {
+
   INVALID_TOKEN = "INVALID_TOKEN",
 }
 
@@ -16,11 +29,6 @@ const ResponsesSchema = Type.Object({
     code: Type.Enum(ErrorCode),
   }),
 });
-
-
-export async function redirectToWeb(callbackUrl: string, token: string, rep: FastifyReply) {
-  rep.redirect(302, `${callbackUrl}?token=${token}`);
-}
 
 /**
  * 对于类似OAuth2的认证系统，登录完成后会给一个token，应用系统（即本系统）需要通过此token来请求信息
@@ -47,7 +55,7 @@ export const authCallbackRoute = fp(async (f) => {
     },
     async (req, rep) => {
 
-      const { token } = req.query;
+      const { token, callbackUrl } = req.query;
 
       // validate the token
       const info = await f.auth.fetchAuthTokenInfo(token, req);
@@ -56,7 +64,9 @@ export const authCallbackRoute = fp(async (f) => {
         return await rep.code(400).send({ code: ErrorCode.INVALID_TOKEN });
       }
 
-      await redirectToWeb(AUTH_REDIRECT_URL, info, rep);
+      await validateCallbackHostname(callbackUrl, req);
+
+      await redirectToWeb(callbackUrl, info, rep);
     },
   );
 });

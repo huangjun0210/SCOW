@@ -1,11 +1,23 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { ExclamationCircleOutlined } from "@ant-design/icons";
-import { Divider, message, Modal, Space, Table } from "antd";
+import { formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { WhitelistedAccount } from "@scow/protos/build/server/account";
+import { App, Divider, Space, Table } from "antd";
 import React from "react";
 import { api } from "src/apis";
-import { WhitelistedAccount } from "src/generated/server/account";
 import type {
   GetWhitelistedAccountsSchema } from "src/pages/api/tenant/accountWhitelist/getWhitelistedAccounts";
-import { formatDateTime } from "src/utils/datetime";
 
 interface Props {
   data: GetWhitelistedAccountsSchema["responses"]["200"] | undefined;
@@ -17,6 +29,8 @@ export const AccountWhitelistTable: React.FC<Props> = ({
   data, isLoading, reload,
 }) => {
 
+  const { message, modal } = App.useApp();
+
   return (
     <Table
       dataSource={data?.results}
@@ -26,19 +40,24 @@ export const AccountWhitelistTable: React.FC<Props> = ({
       pagination={{ showSizeChanger: true }}
     >
       <Table.Column<WhitelistedAccount> dataIndex="accountName" title="账户名" />
-      <Table.Column<WhitelistedAccount> dataIndex="ownerId" title="拥有者"
+      <Table.Column<WhitelistedAccount>
+        dataIndex="ownerId"
+        title="拥有者"
         render={(_, r) => `${r.ownerName} (id: ${r.ownerId})`}
       />
-      <Table.Column<WhitelistedAccount> dataIndex="addTime" title="加入时间"
+      <Table.Column
+        dataIndex="addTime"
+        title="加入时间"
         render={(time: string) => formatDateTime(time) }
       />
       <Table.Column<WhitelistedAccount> dataIndex="comment" title="备注" />
       <Table.Column<WhitelistedAccount> dataIndex="operatorId" title="操作人" />
-      <Table.Column<WhitelistedAccount> title="操作"
+      <Table.Column<WhitelistedAccount>
+        title="操作"
         render={(_, r) => (
           <Space split={<Divider type="vertical" />}>
             <a onClick={() => {
-              Modal.confirm({
+              modal.confirm({
                 title: "确认将账户移除白名单？",
                 icon: <ExclamationCircleOutlined />,
                 content: `确认要将账户${r.accountName}从白名单移除？`,

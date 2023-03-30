@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-import "google/protobuf/descriptor.proto";
-package scow.mq;
-
-extend google.protobuf.MessageOptions {
-  optional string mq_queue = 51234;
-}

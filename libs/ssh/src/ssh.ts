@@ -1,8 +1,28 @@
-import { NodeSSH, SSHExecCommandOptions } from "node-ssh";
-import type { Logger } from "pino";
-import { quote } from "shell-quote";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
 
-import { insertKey, KeyPair } from "./key";
+import { NodeSSH, SSHExecCommandOptions, SSHExecCommandResponse } from "node-ssh";
+import { join } from "path";
+import { quote } from "shell-quote";
+import type { Logger } from "ts-log";
+
+import { insertKeyAsRoot, KeyPair } from "./key";
+import { sftpChmod, sftpMkdir, sftpStat, sftpWriteFile } from "./sftp";
+
+export class SshConnectError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Error when connecting to remote", options);
+  }
+}
 
 /**
  * Connect to SSH and returns the SSH Object
@@ -11,7 +31,7 @@ import { insertKey, KeyPair } from "./key";
  * If the username is not root and first login attempt failed,
  * it inserts the public key into the user's authorized_key and logs in again
  *
- * @param addr address
+ * @param address address
  * @param username  username
  * @param rootKeyPair the ssh key pair of root user
  * @param logger logger
@@ -34,12 +54,39 @@ export async function sshRawConnect(address: string, username: string, rootKeyPa
     }
 
     logger.info("Login to %s as %s failed. Try inserting public key", host, username);
-    await insertKey(username, address, rootKeyPair, logger);
-    await connect();
+    await insertKeyAsRoot(username, address, rootKeyPair, logger);
+    await connect().catch((e) => {
+      logger.error(e, "Login to %s as %s still failed after inserting key", host, username);
+      throw new SshConnectError({ cause: e });
+    });
   }
 
   return ssh;
 }
+
+/**
+ * Connect to SSH by password and returns the SSH Object
+ * Must dispose of the object after use
+ *
+ * @param address address
+ * @param username  username
+ * @param password password of the user
+ * @param logger logger
+ * @returns SSH Object
+ */
+export async function sshRawConnectByPassword(address: string, username: string, password: string, logger: Logger) {
+  const [host, port] = address.split(":");
+  const ssh = new NodeSSH();
+
+  await ssh.connect({ host, port: port ? +port : undefined, username, password: password })
+    .catch((e) => {
+      logger.info("Login to %s as %s by password failed.", host, username);
+      throw new SshConnectError({ cause: e });
+    });
+
+  return ssh;
+}
+
 
 export async function sshConnect<T>(
   address: string, username: string, rootKeyPair: KeyPair, logger: Logger,
@@ -48,6 +95,26 @@ export async function sshConnect<T>(
   const ssh = await sshRawConnect(address, username, rootKeyPair, logger);
 
   return run(ssh).finally(() => { ssh.dispose(); });
+}
+
+export async function sshConnectByPassword<T>(
+  address: string, username: string, password: string, logger: Logger,
+  run: (ssh: NodeSSH) => Promise<T>,
+) {
+  const ssh = await sshRawConnectByPassword(address, username, password, logger);
+
+  return run(ssh).finally(() => { ssh.dispose(); });
+}
+
+/**
+ * Calculate env prefix. Needed quotes in values are added
+ * e.g. { test: "123"; test1: "4\"56" } => "test=123 test1='4\"56' "
+ *
+ * @param env env objec
+ * @returns string to be added in front of the command
+ */
+export function getEnvPrefix(env: Record<string, string>) {
+  return Object.keys(env).map((x) => `${x}=${quote([env[x] ?? ""])} `).join("");
 }
 
 /**
@@ -63,9 +130,15 @@ export function constructCommand(cmd: string, parameters: readonly string[], env
 
   const command = cmd + (parameters.length > 0 ? (" " + quote(parameters)) : "");
 
-  const envPrefix = env ? Object.keys(env).map((x) => `${x}=${quote([env[x] ?? ""])} `).join("") : "";
+  const envPrefix = env ? getEnvPrefix(env) : "";
 
   return envPrefix + command;
+}
+
+export class SSHExecError extends Error {
+  constructor(public response: SSHExecCommandResponse, options?: ErrorOptions) {
+    super("Error when executing command", options);
+  }
 }
 
 export async function loggedExec(ssh: NodeSSH, logger: Logger, throwIfFailed: boolean,
@@ -80,12 +153,39 @@ export async function loggedExec(ssh: NodeSSH, logger: Logger, throwIfFailed: bo
   if (resp.code !== 0) {
     logger.error("Command %o failed. stdout %s, stderr %s", command, resp.stdout, resp.stderr);
     if (throwIfFailed) {
-      throw new Error("");
+      throw new SSHExecError(resp);
     }
   } else {
     logger.debug("Command %o completed. stdout %s, stderr %s", command, resp.stdout, resp.stderr);
   }
   return resp;
+}
+
+/**
+ * Execute a command as a user
+ *
+ * @param ssh ssh object connected as root
+ * @param user the user the command will execute as
+ * @param logger logger
+ * @param throwIfFailed throw if failed
+ * @param command the command
+ * @param parameters the parameters
+ * @param options exec options
+ */
+export async function executeAsUser(
+  ssh: NodeSSH, user: string, logger: Logger, throwIfFailed: boolean,
+  command: string, parameters: readonly string[], options?: SSHExecCommandOptions,
+) {
+
+  const env = options?.execOptions?.env;
+  const envOption = env ? `--preserve-env=${Object.keys(env).join(",")}` : "";
+
+  return await loggedExec(ssh, logger, throwIfFailed,
+    "sudo", [
+      envOption,
+      "-u", user,
+      "-s", command, ...parameters,
+    ], options);
 }
 
 /**
@@ -101,3 +201,69 @@ export async function testRootUserSshLogin(host: string, keyPair: KeyPair, logge
   return await sshConnect(host, "root", keyPair, logger, async () => undefined).catch((e) => e);
 
 }
+
+/**
+ * Get a user's home directory
+ * @param ssh ssh object connected as any user
+ * @param username the username to be queried
+ * @param logger logger
+ * @returns the user's home directory
+ */
+export const getUserHomedir = async (ssh: NodeSSH, username: string, logger: Logger) => {
+  const resp = await loggedExec(ssh, logger, true, "eval", ["echo", `~${username}`]);
+
+  return resp.stdout.trim();
+};
+
+/**
+ * Login as user by password and insert the host's public key to the user's authorized_keys to enable public key login
+ *
+ * @param address the address
+ * @param username the username
+ * @param pwd password
+ * @param rootKeyPair key pair
+ * @param logger logger
+ */
+export async function insertKeyAsUser(
+  address: string, username: string, pwd: string,
+  rootKeyPair: KeyPair, logger: Logger,
+) {
+
+  await sshConnectByPassword(address, username, pwd, logger, async (ssh) => {
+    const userHomeDir = await getUserHomedir(ssh, username, logger);
+
+    const sftp = await ssh.requestSFTP();
+    const stat = await sftpStat(sftp)(userHomeDir).catch(() => undefined);
+
+    if (!stat) {
+      logger.warn("Home directory %s of user %s doesn't exist even after login as the user. Insert key as root.",
+        userHomeDir, username);
+
+      await insertKeyAsRoot(username, address, rootKeyPair, logger);
+      return;
+    }
+
+    // make sure user home dir is a directory
+    if (!stat.isDirectory()) {
+      throw new Error(`${userHomeDir} of user ${username} exists but is not a directory`);
+    }
+
+    // creat ~/.ssh/authorized_keys and write keys
+    const sshDir = join(userHomeDir, ".ssh");
+    await sftpMkdir(sftp)(sshDir);
+    await sftpChmod(sftp)(sshDir, "700");
+
+    const keyFilePath = join(sshDir, "authorized_keys");
+    await sftpWriteFile(sftp)(keyFilePath, rootKeyPair.publicKey);
+    logger.info("Writing key for user %s to %s in file %s", username, address, keyFilePath);
+    await sftpChmod(sftp)(keyFilePath, "644");
+  });
+}
+
+export async function sshRmrf(ssh: NodeSSH, path: string) {
+  await ssh.exec("rm", ["-rf", path]).catch((e) => {
+    throw new SSHExecError(e);
+  });
+}
+
+

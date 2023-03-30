@@ -1,8 +1,26 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import "nprogress/nprogress.css";
-import "antd/dist/antd.variable.min.css";
+import "antd/dist/reset.css";
 
 import { failEvent, fromApi } from "@ddadaal/next-typed-api-routes-runtime/lib/client";
-import { message } from "antd";
+import { AntdConfigProvider } from "@scow/lib-web/build/layouts/AntdConfigProvider";
+import { DarkModeProvider } from "@scow/lib-web/build/layouts/darkMode";
+import { GlobalStyle } from "@scow/lib-web/build/layouts/globalStyle";
+import { getHostname } from "@scow/lib-web/build/utils/getHostname";
+import { useConstant } from "@scow/lib-web/build/utils/hooks";
+import { isServer } from "@scow/lib-web/build/utils/isServer";
+import { App as AntdApp } from "antd";
 import type { AppContext, AppProps } from "next/app";
 import App from "next/app";
 import dynamic from "next/dynamic";
@@ -13,19 +31,17 @@ import { createStore, StoreProvider, useStore } from "simstate";
 import { MOCK_USER_INFO } from "src/apis/api.mock";
 import { USE_MOCK } from "src/apis/useMock";
 import { getTokenFromCookie, setTokenCookie } from "src/auth/cookie";
-import { RootLayout } from "src/layouts/RootLayout";
+import { BaseLayout } from "src/layouts/BaseLayout";
+import { FloatButtons } from "src/layouts/FloatButtons";
 import { ValidateTokenSchema } from "src/pages/api/auth/validateToken";
+import { DefaultClusterStore } from "src/stores/DefaultClusterStore";
 import {
   User, UserStore,
 } from "src/stores/UserStore";
-import { GlobalStyle } from "src/styles/globalStyle";
-import { AntdConfigProvider } from "src/utils/AntdConfigProvider";
-import { runtimeConfig } from "src/utils/config";
-import { getHostname } from "src/utils/host";
-import { isServer } from "src/utils/isServer";
-import useConstant from "src/utils/useConstant";
+import { publicConfig, runtimeConfig } from "src/utils/config";
 
 const FailEventHandler: React.FC = () => {
+  const { message, modal } = AntdApp.useApp();
   const userStore = useStore(UserStore);
 
   // 登出过程需要调用的几个方法（logout, useState等）都是immutable的
@@ -34,9 +50,21 @@ const FailEventHandler: React.FC = () => {
     failEvent.register((e) => {
       if (e.status === 401) {
         userStore.logout();
-      } else {
-        message.error(`服务器出错啦！(${e.status}, ${e.data?.code}))`);
+        return;
       }
+
+      if (e.data?.code === "CLUSTEROPS_ERROR") {
+        modal.error({
+          title: "操作失败",
+          content: `多集群操作出现错误，部分集群未同步修改(${
+            e.data.details?.split(",").map((x) => publicConfig.CLUSTERS[x].name)
+          }), 请联系管理员!`,
+        });
+        return;
+      }
+
+      message.error(`服务器出错啦！(${e.status}, ${e.data?.code}))`);
+
     });
   }, []);
 
@@ -69,25 +97,47 @@ function MyApp({ Component, pageProps, extra }: Props) {
     return store;
   });
 
+  const defaultClusterStore = useConstant(() => {
+    const store = createStore(DefaultClusterStore, Object.values(publicConfig.CLUSTERS)[0]);
+    return store;
+  });
+
   // Use the layout defined at the page level, if available
   return (
     <>
       <Head>
-        <meta name="format-detection" content="telephone=no"/>
-        <link href="/manifest.json" rel="manifest" id="manifest" />
-        <link rel="icon" type="image/x-icon"
-          href={join(process.env.NEXT_PUBLIC_BASE_PATH || "", "/api/icon?type=favicon")}
+        <meta name="format-detection" content="telephone=no" />
+        <link href={join(publicConfig.BASE_PATH, "/manifest.json")} rel="manifest" id="manifest" />
+        <link
+          rel="icon"
+          type="image/x-icon"
+          href={join(publicConfig.BASE_PATH, "/api/icon?type=favicon")}
         ></link>
+        <script
+          id="__CONFIG__"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.__CONFIG__ = ${
+    JSON.stringify({
+      BASE_PATH: publicConfig.BASE_PATH === "/" ? "" : publicConfig.BASE_PATH,
+    })};
+            `,
+          }}
+        />
       </Head>
-      <GlobalStyle />
-      <StoreProvider stores={[userStore]}>
-        <AntdConfigProvider color={primaryColor}>
-          <FailEventHandler />
-          <TopProgressBar />
-          <RootLayout footerText={footerText}>
-            <Component {...pageProps} />
-          </RootLayout>
-        </AntdConfigProvider>
+      <StoreProvider stores={[userStore, defaultClusterStore]}>
+        <DarkModeProvider>
+
+          <AntdConfigProvider color={primaryColor}>
+            <FloatButtons />
+            <GlobalStyle />
+            <FailEventHandler />
+            <TopProgressBar />
+            <BaseLayout footerText={footerText}>
+              <Component {...pageProps} />
+            </BaseLayout>
+          </AntdConfigProvider>
+        </DarkModeProvider>
       </StoreProvider>
     </>
   );
@@ -131,7 +181,7 @@ MyApp.getInitialProps = async (appContext: AppContext) => {
           "GET",
           join(
             `http://localhost:${process.env.PORT ?? 3000}`,
-            process.env.NEXT_PUBLIC_BASE_PATH || "/",
+            publicConfig.BASE_PATH,
             "/api/auth/validateToken",
           ),
         )({ query: { token } }).catch(() => undefined);

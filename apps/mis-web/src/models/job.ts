@@ -1,5 +1,17 @@
-import moment from "moment";
-import type { RunningJob } from "src/generated/common/job";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import type { RunningJob } from "@scow/protos/build/common/job";
+import dayjs from "dayjs";
 import type { Cluster } from "src/utils/config";
 
 
@@ -23,7 +35,7 @@ function calculateRunningOrQueueTime(r: RunningJob) {
   }
 
   // calculate to format [{days}-][{Hours}:]{MM}:{SS}
-  const diffMs = moment().diff(r.submissionTime);
+  const diffMs = dayjs().diff(r.submissionTime);
   const seconds = diffMs / 1000;
   const minutes = seconds / 60;
   const hours = minutes / 60;
@@ -52,3 +64,19 @@ export enum AmountStrategy {
   GPU = "gpu",
   CPUS_ALLOC = "cpusAlloc"
 }
+
+export const AmountStrategyText = "计量方式";
+export const AmountStrategyDescription = "确定作业的用量的方式";
+
+export const AmountStrategyDescriptions: Record<AmountStrategy, string> = {
+  "max-cpusAlloc-mem": "CPU和内存分配量",
+  "max-gpu-cpusAlloc": "GPU和CPU分配量",
+  "gpu": "GPU分配量",
+  "cpusAlloc": "CPU分配量",
+};
+export const AmountStrategyAlgorithmDescriptions: Record<AmountStrategy, string> = {
+  "max-cpusAlloc-mem": "max(cpusAlloc, 向上取整(memReq / (分区内存量/分区核心数)))",
+  "max-gpu-cpusAlloc": "max(gpu, 向上取整(cpusAlloc / (分区核心数/分区gpu数)))",
+  "gpu": "gpu",
+  "cpusAlloc": "cpusAlloc",
+};

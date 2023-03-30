@@ -1,10 +1,23 @@
-import { sshRawConnect } from "@scow/lib-ssh";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { asyncReplyStreamCall, asyncUnaryCall } from "@ddadaal/tsgrpc-client";
+import { FileServiceClient } from "@scow/protos/build/portal/file";
 import { contentType } from "mime-types";
 import { basename } from "path";
 import { authenticate } from "src/auth/server";
-import { runtimeConfig } from "src/utils/config";
+import { getClient } from "src/utils/client";
+import { pipeline } from "src/utils/pipeline";
 import { route } from "src/utils/route";
-import { getClusterLoginNode } from "src/utils/ssh";
 
 export interface DownloadFileSchema {
   method: "GET";
@@ -56,44 +69,37 @@ export default route<DownloadFileSchema>("DownloadFileSchema", async (req, res) 
 
   const { cluster, path, download } = req.query;
 
-  const host = getClusterLoginNode(cluster);
-
-  if (!host) {
-    return { 400: { code: "INVALID_CLUSTER" } };
-  }
-
-  const ssh = await sshRawConnect(host, info.identityId, runtimeConfig.ROOT_KEY_PAIR, req.log);
-
-  const sftp = await ssh.requestSFTP();
+  const client = getClient(FileServiceClient);
 
   const filename = basename(path).replace("\"", "\\\"");
   const dispositionParm = "filename* = UTF-8''" + encodeURIComponent(filename);
 
+  const reply = await asyncUnaryCall(client, "getFileMetadata", {
+    userId: info.identityId, cluster, path,
+  });
+
   res.writeHead(200, download ? {
     "Content-Type": getContentType(filename, "application/octet-stream"),
     "Content-Disposition": `attachment; ${dispositionParm}`,
+    "Content-Length": reply.size,
   } : {
     "Content-Type": getContentType(filename, "text/plain; charset=utf-8"),
     "Content-Disposition": `inline; ${dispositionParm}`,
+    "Content-Length": reply.size,
   });
 
-  const stream = sftp.createReadStream(path);
+  const stream = asyncReplyStreamCall(client, "download", {
+    cluster, path, userId: info.identityId,
+  });
 
-  await new Promise<void>((resolve) => {
-    const end = () => {
-      ssh.dispose();
-      res.end();
-      resolve();
-    };
-
-    stream.on("error", (error) => {
-      res.status(500).send(new Error("Error reading file", { cause: error }));
-      end();
-    });
-    stream.on("end", end);
-
-    stream.pipe(res);
-
+  await pipeline(
+    stream.iter(),
+    async (x) => {
+      return x.chunk;
+    },
+    res,
+  ).finally(() => {
+    res.end();
   });
 });
 

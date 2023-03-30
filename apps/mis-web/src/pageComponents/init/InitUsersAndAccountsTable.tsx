@@ -1,23 +1,31 @@
-import { message, Popconfirm, Space, Table, Tag } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { FormLayout } from "@scow/lib-web/build/layouts/FormLayout";
+import { Account } from "@scow/protos/build/server/account";
+import { AccountAffiliation, User } from "@scow/protos/build/server/user";
+import { Table, Tabs, Typography } from "antd";
 import { useEffect } from "react";
 import { useAsync } from "react-async";
 import { api } from "src/apis";
-import { Centered } from "src/components/layouts";
-import { Account } from "src/generated/server/account";
-import { AccountAffiliation, User } from "src/generated/server/user";
-import { PlatformRole, PlatformRoleTexts, TenantRole, TenantRoleTexts, UserRole, UserRoleTexts } from "src/models/User";
-import styled from "styled-components";
+import { PlatformRoleSelector } from "src/components/PlatformRoleSelector";
+import { TenantRoleSelector } from "src/components/TenantRoleSelector";
+import { UserRole, UserRoleTexts } from "src/models/User";
 
 interface DataTableProps<T> {
   data: T[] | undefined;
   loading: boolean;
   reload: () => void;
 }
-
-const Title = styled.div`
-  display: flex;
-  justify-content: space-between;
-`;
 
 const UserTable: React.FC<DataTableProps<User>> = ({ data, loading, reload }) => {
   return (
@@ -27,65 +35,39 @@ const UserTable: React.FC<DataTableProps<User>> = ({ data, loading, reload }) =>
       scroll={{ x: true }}
       bordered
       rowKey="userId"
-      title={() => <Title><span>用户</span><a onClick={reload}>刷新</a></Title>}
     >
       <Table.Column<User> dataIndex="userId" title="用户ID" />
       <Table.Column<User> dataIndex="name" title="姓名" />
-      <Table.Column<User> dataIndex="platformRoles" title="平台角色"
-        render={(r: PlatformRole[]) => r.map((x) => <Tag key={x}>{PlatformRoleTexts[x]}</Tag>)}
+      <Table.Column<User>
+        dataIndex="platformRoles"
+        title="平台角色"
+        width={200}
+        render={(_, r) => (
+          <PlatformRoleSelector roles={r.platformRoles} userId={r.userId} reload={reload} />
+        )}
       />
-      <Table.Column<User> dataIndex="tenantRoles" title="租户角色"
-        render={(r: TenantRole[]) => r.map(((x) => <Tag key={x}>{TenantRoleTexts[x]}</Tag>))}
+      <Table.Column<User>
+        dataIndex="tenantRoles"
+        title="租户角色"
+        width={200}
+        render={(_, r) => (
+          <TenantRoleSelector roles={r.tenantRoles} userId={r.userId} reload={reload} />
+        )}
       />
-      <Table.Column<User> dataIndex="accountAffiliations" title="所属账户"
+      <Table.Column
+        dataIndex="accountAffiliations"
+        title="所属账户"
         render={(accounts: AccountAffiliation[]) => accounts
           .map((x) =>
             x.accountName +
               (x.role !== UserRole.USER ? `(${UserRoleTexts[x.role]})` : ""),
           ).join(", ")}
       />
-      <Table.Column<User> title="初始管理员" render={(_, r) => (
-        <Space>
-          {
-            !(r.platformRoles.includes(PlatformRole.PLATFORM_ADMIN) && r.tenantRoles.includes(TenantRole.TENANT_ADMIN))
-              ? (
-                <Popconfirm
-                  title="确定要赋予此用户的平台管理员和租户管理员角色吗？"
-                  onConfirm={async () => {
-                    await api.setAsInitAdmin({ body: { userId: r.userId } }).then(() => {
-                      message.success("设置成功！");
-                      reload();
-                    });
-                  }}
-                >
-                  <a>设置</a>
-                </Popconfirm>
-              ) : undefined
-          }
-          {
-            (r.platformRoles.includes(PlatformRole.PLATFORM_ADMIN) || r.tenantRoles.includes(TenantRole.TENANT_ADMIN))
-              ? (
-                <Popconfirm
-                  title="确定要取消此用户的平台管理员和租户管理员角色吗？"
-                  onConfirm={async () => {
-                    await api.unsetInitAdmin({ body: { userId: r.userId } }).then(() => {
-                      message.success("取消设置成功！");
-                      reload();
-                    });
-                  }}
-                >
-                  <a>取消</a>
-                </Popconfirm>
-              ) : undefined
-          }
-        </Space>
-      )}
-      />
     </Table>
   );
 };
 
-const AccountTable: React.FC<DataTableProps<Account>> = ({ data, loading, reload }) => {
+const AccountTable: React.FC<DataTableProps<Account>> = ({ data, loading }) => {
   return (
     <Table
       loading={loading}
@@ -94,10 +76,11 @@ const AccountTable: React.FC<DataTableProps<Account>> = ({ data, loading, reload
       pagination={{ showSizeChanger: true }}
       rowKey="accountName"
       bordered
-      title={() => <Title><span>账户</span><a onClick={reload}>刷新</a></Title>}
     >
       <Table.Column<Account> dataIndex="accountName" title="账户名" />
-      <Table.Column<Account> dataIndex="ownerName" title="拥有者"
+      <Table.Column<Account>
+        dataIndex="ownerName"
+        title="拥有者"
         render={(_, r) => `${r.ownerName} (id: ${r.ownerId})`}
       />
     </Table>
@@ -124,18 +107,24 @@ export const InitUsersAndAccountsTable: React.FC = () => {
   }, []);
 
   return (
-    <Centered>
-      <div>
-        <p>
+    <div>
+      <FormLayout maxWidth={800}>
+        <Typography.Paragraph>
           您可以在这里管理当前系统中默认租户下的用户和账户，以及设置某个用户为<strong>初始管理员</strong>。
-        </p>
-        <p>
+        </Typography.Paragraph>
+        <Typography.Paragraph>
           <strong>初始管理员</strong>指同时为租户管理员和平台管理员的用户。
-        </p>
-        <UserTable data={usersData} loading={usersLoading} reload={usersReload} />
-        <AccountTable data={accountsData} loading={accountsLoading} reload={accountsReload} />
-      </div>
-    </Centered>
+        </Typography.Paragraph>
+        <Tabs defaultActiveKey="user" tabBarExtraContent={<a onClick={reload}>刷新</a>}>
+          <Tabs.TabPane tab="用户" key="user">
+            <UserTable data={usersData} loading={usersLoading} reload={usersReload} />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab="账户" key="account">
+            <AccountTable data={accountsData} loading={accountsLoading} reload={accountsReload} />
+          </Tabs.TabPane>
+        </Tabs>
+      </FormLayout>
+    </div>
   );
 
 };

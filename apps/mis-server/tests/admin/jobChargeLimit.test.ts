@@ -1,11 +1,24 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { asyncClientCall } from "@ddadaal/tsgrpc-client";
 import { Server } from "@ddadaal/tsgrpc-server";
 import { ChannelCredentials } from "@grpc/grpc-js";
 import { SqlEntityManager } from "@mikro-orm/mysql";
 import { Decimal, decimalToMoney } from "@scow/lib-decimal";
+import { JobChargeLimitServiceClient } from "@scow/protos/build/server/job_charge_limit";
 import { createServer } from "src/app";
+import { addJobCharge } from "src/bl/charging";
 import { UserAccount, UserStatus } from "src/entities/UserAccount";
-import { JobChargeLimitServiceClient } from "src/generated/server/jobChargeLimit";
 import { reloadEntity } from "src/utils/orm";
 import { InitialData, insertInitialData } from "tests/data/data";
 import { dropDatabase } from "tests/data/helpers";
@@ -53,7 +66,7 @@ it("sets job charge limit", async () => {
     ...params(ua), limit: decimalToMoney(limit),
   });
 
-  await reloadEntity(ua);
+  await reloadEntity(em, ua);
 
   expectDecimalEqual(ua.jobChargeLimit, limit);
   expectDecimalEqual(ua.usedJobCharge, new Decimal(0));
@@ -73,7 +86,7 @@ it("changes job charge limit", async () => {
 
   await asyncClientCall(client, "setJobChargeLimit", { ...params(ua), limit: decimalToMoney(newLimit) });
 
-  await reloadEntity(ua);
+  await reloadEntity(em, ua);
 
   expectDecimalEqual(ua.jobChargeLimit, newLimit);
 });
@@ -88,10 +101,13 @@ it("cancels job charge limit", async () => {
 
   await asyncClientCall(client, "cancelJobChargeLimit", { ...params(ua) });
 
-  await reloadEntity(ua);
+  const ua1 = await em.fork().findOneOrFail(UserAccount, {
+    account: ua.account,
+    user: ua.user,
+  });
 
-  expect(ua.jobChargeLimit).toBeUndefined();
-  expect(ua.usedJobCharge).toBeUndefined();
+  expect(ua1.jobChargeLimit).toBeUndefined();
+  expect(ua1.usedJobCharge).toBeUndefined();
 });
 
 it("adds job charge", async () => {
@@ -104,7 +120,7 @@ it("adds job charge", async () => {
 
   const charge = new Decimal(20.4);
 
-  await ua.addJobCharge(charge, server.ext, server.logger);
+  await addJobCharge(ua, charge, server.ext, server.logger);
 
   expectDecimalEqual(ua.usedJobCharge, charge);
   expectDecimalEqual(ua.jobChargeLimit, limit);
@@ -120,7 +136,7 @@ it("blocks user if used > limit", async () => {
   expectDecimalEqual(ua.jobChargeLimit, limit);
 
   const charge = new Decimal(120.4);
-  await ua.addJobCharge(charge, server.ext, server.logger);
+  await addJobCharge(ua, charge, server.ext, server.logger);
 
   expectDecimalEqual(ua.usedJobCharge, charge);
   expectDecimalEqual(ua.jobChargeLimit, limit);
@@ -137,7 +153,7 @@ it("unblocked user if limit is changed to >= used", async () => {
   const newLimit = new Decimal(140);
   await asyncClientCall(client, "setJobChargeLimit", { ...params(ua), limit: decimalToMoney(newLimit) });
 
-  await reloadEntity(ua);
+  await reloadEntity(em, ua);
   expectDecimalEqual(ua.jobChargeLimit, newLimit);
   expect(ua.status).toBe(UserStatus.UNBLOCKED);
 
@@ -152,7 +168,7 @@ it("unblocks user if limit >= used is positive", async () => {
 
   const charge = new Decimal(-20.4);
 
-  await ua.addJobCharge(charge, server.ext, server.logger);
+  await addJobCharge(ua, charge, server.ext, server.logger);
 
   expectDecimalEqual(ua.jobChargeLimit, limit);
   expectDecimalEqual(ua.usedJobCharge, new Decimal(99.6));
@@ -160,7 +176,7 @@ it("unblocks user if limit >= used is positive", async () => {
 });
 
 it("does nothing if no limit", async () => { const charge = new Decimal(120.4);
-  await ua.addJobCharge(charge, server.ext, server.logger);
+  await addJobCharge(ua, charge, server.ext, server.logger);
 
   expect(ua.jobChargeLimit).toBeUndefined();
   expect(ua.usedJobCharge).toBeUndefined();

@@ -1,15 +1,26 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { asyncClientCall } from "@ddadaal/tsgrpc-client";
 import { Server } from "@ddadaal/tsgrpc-server";
 import { ChannelCredentials } from "@grpc/grpc-js";
 import { SqlEntityManager } from "@mikro-orm/mysql";
 import { Decimal, moneyToNumber, numberToMoney } from "@scow/lib-decimal";
+import { JobServiceClient } from "@scow/protos/build/server/job";
 import { createServer } from "src/app";
 import { JobInfo } from "src/entities/JobInfo";
 import { JobPriceChange } from "src/entities/JobPriceChange";
 import { UserAccount } from "src/entities/UserAccount";
-import { JobServiceClient } from "src/generated/server/job";
 import { range } from "src/utils/array";
-import { UNKNOWN_PRICE_ITEM } from "src/utils/constants";
 import { reloadEntities } from "src/utils/orm";
 import { InitialData, insertInitialData } from "tests/data/data";
 import { dropDatabase } from "tests/data/helpers";
@@ -45,7 +56,7 @@ const mockOriginalJobData = (
   "partition": "C032M0128G",
   "nodelist": "a5u15n01",
   "jobName": "CoW",
-  "cluster": "hpc00",
+  "cluster": "pkuhpc",
   "timeSubmit": new Date("2020-04-23T22:23:00.000Z"),
   "timeStart": new Date("2020-04-23T22:25:12.000Z"),
   "timeEnd": new Date("2020-04-23T23:18:02.000Z"),
@@ -61,7 +72,10 @@ const mockOriginalJobData = (
   "timeWait": 132,
   "qos": "normal",
   "recordTime": new Date("2020-04-23T23:49:50.000Z"),
-}, data.tenant.name, tenantPrice, UNKNOWN_PRICE_ITEM, accountPrice, UNKNOWN_PRICE_ITEM);
+}, data.tenant.name, {
+  tenant: { billingItemId: "", price: tenantPrice },
+  account: { billingItemId: "", price: accountPrice },
+});
 
 function createClient() {
   return new JobServiceClient(server.serverAddress, ChannelCredentials.createInsecure());
@@ -104,7 +118,7 @@ it("changes job prices", async () => {
     tenantPrice: jobs[x].tenantPrice.toFixed(4),
   }));
 
-  await reloadEntities(jobs);
+  await reloadEntities(em, jobs);
 
   expect(jobs.map((x) => x.tenantPrice.toNumber())).toStrictEqual([1.7, 1.7, 4]);
   expect(jobs.map((x) => x.accountPrice.toNumber())).toStrictEqual([1.6, 1.6, 8]);
@@ -117,7 +131,7 @@ it("changes job prices", async () => {
   expect(record.newAccountPrice?.toNumber()).toBe(1.6);
   expect(record.newTenantPrice?.toNumber()).toBe(1.7);
 
-  await reloadEntities([data.tenant, data.accountA, data.accountB]);
+  await reloadEntities(em, [data.tenant, data.accountA, data.accountB]);
 
   // check balances
   expect(data.tenant.balance.toNumber()).toBe(prevTenantBalance.minus(0.4).toNumber()); // 1-1.7+2-1.7
@@ -147,5 +161,34 @@ it("returns 10 jobs if pageSize is undefined or 0", async () => {
   };
 
   await Promise.all([test(0), test()]);
+
+});
+
+it("returns jobs starting from start_bi_job_index", async () => {
+  const em = server.ext.orm.em.fork();
+
+  await em.persistAndFlush(range(1, 20).map((x) =>
+    mockOriginalJobData(x, data.uaAA, new Decimal(20), new Decimal(10))));
+
+  await em.persistAndFlush(range(20, 40).map((x) =>
+    mockOriginalJobData(x, data.uaCC, new Decimal(20), new Decimal(10))));
+
+  await em.persistAndFlush(range(40, 60).map((x) =>
+    mockOriginalJobData(x, data.uaAB, new Decimal(20), new Decimal(10))));
+
+  const client = createClient();
+
+  const reply = await asyncClientCall(client, "getJobs", {
+    page: 1,
+    pageSize: 100,
+    filter: {
+      clusters: [],
+      tenantName: data.tenant.name,
+      startBiJobIndex: 10,
+    },
+  });
+
+  expect(reply.jobs).toSatisfyAll((x: JobInfo) => x.biJobIndex >= 10);
+  expect(reply.jobs).toHaveLength(30);
 
 });

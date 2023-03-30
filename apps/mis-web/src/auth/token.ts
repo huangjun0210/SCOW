@@ -1,20 +1,24 @@
-import { jsonFetch } from "@ddadaal/next-typed-api-routes-runtime/lib/client";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { asyncClientCall } from "@ddadaal/tsgrpc-client";
-import path from "path";
+import { validateToken as valToken } from "@scow/lib-auth";
+import { GetUserInfoResponse, UserServiceClient } from "@scow/protos/build/server/user";
 import { MOCK_USER_INFO } from "src/apis/api.mock";
 import { USE_MOCK } from "src/apis/useMock";
-import { GetUserInfoReply, UserServiceClient } from "src/generated/server/user";
 import { UserInfo } from "src/models/User";
 import { getClient } from "src/utils/client";
 import { runtimeConfig } from "src/utils/config";
 
-interface AuthValidateTokenSchema {
-  query: { token: string }
-  responses: {
-    200: UserInfo;
-    400: { code: "INVALID_TOKEN" };
-  }
-}
 
 export async function validateToken(token: string): Promise<UserInfo | undefined> {
 
@@ -22,11 +26,8 @@ export async function validateToken(token: string): Promise<UserInfo | undefined
     return MOCK_USER_INFO;
   }
 
-  const resp = await jsonFetch<AuthValidateTokenSchema>({
-    method: "GET",
-    path: path.join(runtimeConfig.AUTH_INTERNAL_URL, "/validateToken"),
-    query: { token },
-  }).catch(() => undefined);
+  const resp = await valToken(runtimeConfig.AUTH_INTERNAL_URL, token).catch(() => undefined);
+
 
   if (!resp) {
     return undefined;
@@ -34,7 +35,7 @@ export async function validateToken(token: string): Promise<UserInfo | undefined
 
   const client = getClient(UserServiceClient);
 
-  const userInfo: GetUserInfoReply = await asyncClientCall(client, "getUserInfo", {
+  const userInfo: GetUserInfoResponse = await asyncClientCall(client, "getUserInfo", {
     userId: resp.identityId,
   });
 

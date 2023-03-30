@@ -1,17 +1,35 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { ServiceError } from "@ddadaal/tsgrpc-common";
 import { Logger, plugin } from "@ddadaal/tsgrpc-server";
-import { ServiceError } from "@grpc/grpc-js";
-import { Status } from "@grpc/grpc-js/build/src/constants";
+import { status } from "@grpc/grpc-js";
 import { testRootUserSshLogin } from "@scow/lib-ssh";
 import { ClusterOps } from "src/clusterops/api";
 import { createSlurmOps } from "src/clusterops/slurm";
 import { clusters } from "src/config/clusters";
 import { rootKeyPair } from "src/config/env";
+import { scowErrorMetadata } from "src/utils/error";
+
+type CallOnAllResult<T> = ({ cluster: string; } & (
+  | { success: true; result: T }
+  | { success: false; error: any }
+))[];
 
 // Throw ServiceError if failed.
 type CallOnAll = <T>(
   logger: Logger,
   call: (ops: ClusterOps) => Promise<T>,
-) => Promise<void>;
+) => Promise<CallOnAllResult<T>>;
 
 type CallOnOne = <T>(
   cluster: string,
@@ -29,6 +47,8 @@ export type ClusterPlugin = {
 const clusterOpsMaps = {
   "slurm": createSlurmOps,
 } as const;
+
+export const CLUSTEROPS_ERROR_CODE = "CLUSTEROPS_ERROR";
 
 export const clustersPlugin = plugin(async (f) => {
 
@@ -56,6 +76,10 @@ export const clustersPlugin = plugin(async (f) => {
     return prev;
   }, {} as Record<string, { ops: ClusterOps, ignore: boolean } >);
 
+  for (const ops of Object.values(opsForClusters).filter((x) => !x.ignore).map((x) => x.ops)) {
+    await ops.onStartup();
+  }
+
   const getClusterOps = (cluster: string) => {
     return opsForClusters[cluster];
   };
@@ -81,25 +105,29 @@ export const clustersPlugin = plugin(async (f) => {
       const results = await Promise.all(Object.entries(opsForClusters)
         .filter(([_, c]) => !c.ignore)
         .map(async ([cluster, ops]) => {
-          return call(ops.ops).then(() => {
+          return call(ops.ops).then((result) => {
             logger.info("Executing on %s success", cluster);
-            return;
+            return { cluster, success: true, result };
           }).catch((e) => {
-            logger.info("Executing on %s failed for %o", cluster, e);
-            return cluster;
+            logger.error(e, "Executing on %s failed", cluster);
+            return { cluster, success: false, error: e };
           });
         }));
 
       // errors if any fails
-      const failed = results.filter((x) => x) as string[];
+      const failed = results.filter((x) => !x.success);
 
       if (failed.length > 0) {
         logger.error("Cluster ops fails at clusters %o", failed);
-        throw <ServiceError>{
-          code: Status.INTERNAL,
-          message: "Execution on clusters failed.",
-        };
+        throw new ServiceError({
+          code: status.INTERNAL,
+          details: failed.map((x) => x.cluster).join(","),
+          metadata: scowErrorMetadata(CLUSTEROPS_ERROR_CODE),
+          // metadata: scowErrorMetadata(CLUSTEROPS_ERROR_CODE, {failedClusters: failed.join(",")})
+        });
       }
+
+      return results;
 
     }),
   };

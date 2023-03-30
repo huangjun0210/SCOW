@@ -1,3 +1,13 @@
+# Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+# SCOW is licensed under Mulan PSL v2.
+# You can use this software according to the terms and conditions of the Mulan PSL v2.
+# You may obtain a copy of Mulan PSL v2 at:
+#          http://license.coscl.org.cn/MulanPSL2
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+# EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+# MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+# See the Mulan PSL v2 for more details.
+
 version: "3"
 
 services:
@@ -15,6 +25,7 @@ services:
     ports:
       - 6379:6379
 
+
   jobTableDb:
     image: mariadb:5.5
     environment:
@@ -25,18 +36,12 @@ services:
       - 3307:3306
 
   ssh-server:
-    image: lscr.io/linuxserver/openssh-server:latest
+    image: alpine-ssh
+    build:
+      context: dev/ssh-server
     ports:
-      - 22222:2222
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - USER_NAME=test
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=test
-      - PUBLIC_KEY_FILE=/id_rsa.pub
+      - 22222:22
     volumes:
-      - ./ssh-server/custom-cont-init.d:/config/custom-cont-init.d
       - $HOME/.ssh/id_rsa.pub:/id_rsa.pub
 
   ldap:
@@ -48,6 +53,18 @@ services:
       - 389:389
     volumes:
       - ldap:/var/lib/ldap
+    ulimits:
+      nofile:
+        soft: 10240
+        hard: 10240
+
+  ldapadmin:
+    image: osixia/phpldapadmin
+    ports:
+      - 3890:80
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: ldap://localhost:389
+      PHPLDAPADMIN_HTTPS: false
 
 networks:
   default:

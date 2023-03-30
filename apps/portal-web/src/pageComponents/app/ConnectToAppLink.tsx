@@ -1,8 +1,20 @@
-import { parsePlaceholder } from "@scow/config/build/parse";
-import { message } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { parsePlaceholder } from "@scow/lib-config/build/parse";
+import type { AppSession } from "@scow/protos/build/portal/app";
+import { App } from "antd";
 import { join } from "path";
 import { api } from "src/apis";
-import { AppSession } from "src/clusterops/api/app";
 import { ClickableA } from "src/components/ClickableA";
 import { Cluster, publicConfig } from "src/utils/config";
 import { openDesktop } from "src/utils/vnc";
@@ -16,14 +28,16 @@ export const ConnectTopAppLink: React.FC<Props> = ({
   session, cluster,
 }) => {
 
+  const { message } = App.useApp();
+
   const onClick = async () => {
     const reply = await api.connectToApp({ body: { cluster: cluster.id, sessionId: session.sessionId } })
       .httpError(404, () => { message.error("此应用会话不存在"); })
       .httpError(409, () => { message.error("此应用目前无法连接"); });
 
     if (reply.type === "web") {
-      const { connect, host, password, port } = reply;
-      const interpolatedValues = { HOST: host, PASSWORD: password, PORT: port };
+      const { connect, host, password, port, proxyType, customFormData } = reply;
+      const interpolatedValues = { HOST: host, PASSWORD: password, PORT: port, ...customFormData };
       const path = parsePlaceholder(connect.path, interpolatedValues);
 
       const interpolateValues = (obj: Record<string, string>) => {
@@ -36,7 +50,11 @@ export const ConnectTopAppLink: React.FC<Props> = ({
       const query = connect.query ? interpolateValues(connect.query) : {};
       const formData = connect.formData ? interpolateValues(connect.formData) : undefined;
 
-      const pathname = join(publicConfig.PROXY_BASE_PATH, host, String(port), path);
+      const proxyBasePath = proxyType === "relative"
+        ? publicConfig.RPROXY_BASE_PATH
+        : publicConfig.PROXY_BASE_PATH;
+
+      const pathname = join(proxyBasePath, host, String(port), path);
 
       const url = pathname + "?" + new URLSearchParams(query).toString();
 

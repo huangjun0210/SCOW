@@ -1,30 +1,25 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import formBody from "@fastify/formbody";
+import { sshConnectByPassword } from "@scow/lib-ssh";
 import { Static, Type } from "@sinclair/typebox";
 import { FastifyInstance } from "fastify";
-import { NodeSSH } from "node-ssh";
 import { cacheInfo } from "src/auth/cacheInfo";
+import { redirectToWeb } from "src/auth/callback";
 import { serveLoginHtml } from "src/auth/loginHtml";
-import { SshConfigSchema } from "src/config/auth";
-import { clusters } from "src/config/clusters";
-import { redirectToWeb } from "src/routes/callback";
+import { validateLoginParams } from "src/auth/validateLoginParams";
 
-export function registerPostHandler(f: FastifyInstance, sshConfig: SshConfigSchema) {
-
-  let loginNode = sshConfig.baseNode;
-
-  if (!loginNode) {
-    if (Object.keys(clusters).length === 0) {
-      throw new Error("No cluster has been set in clusters config");
-    }
-    const clusterConfig = Object.values(clusters)[0];
-    loginNode = clusterConfig.slurm.loginNodes[0];
-
-    if (!loginNode) {
-      throw new Error(`Cluster ${clusterConfig.displayName} has no login node.`);
-    }
-  }
-
-  const [host, port] = loginNode.split(":");
+export function registerPostHandler(f: FastifyInstance, loginNode: string) {
 
   f.register(formBody);
 
@@ -32,31 +27,32 @@ export function registerPostHandler(f: FastifyInstance, sshConfig: SshConfigSche
     username: Type.String(),
     password: Type.String(),
     callbackUrl: Type.String(),
+    token: Type.String(),
+    code: Type.String(),
   });
 
   // register a login handler
   f.post<{ Body: Static<typeof bodySchema> }>("/public/auth", {
     schema: { body: bodySchema },
   }, async (req, res) => {
-    const { username, password, callbackUrl } = req.body;
+    const { username, password, callbackUrl, code, token } = req.body;
 
-    const logger = req.log.child({ plugin: "ldap" });
+    const logger = req.log.child({ plugin: "ssh" });
 
-    // login to the a login node
-
-    const ssh = new NodeSSH();
-
-    try {
-      await ssh.connect({ username, password, host, port: +port });
-      const info = await cacheInfo(username, req);
-      await redirectToWeb(callbackUrl, info, res);
-    } catch (e) {
-      logger.info("Log in as %s failed. Erro: %o", username, e);
-      await serveLoginHtml(true, callbackUrl, req, res);
-    } finally {
-      ssh.dispose();
-
+    if (!await validateLoginParams(token, code, callbackUrl, req, res)) {
+      return;
     }
+
+    await sshConnectByPassword(loginNode, username, password, req.log, async () => {})
+      .then(async () => {
+        logger.info("Log in as %s succeeded.");
+        const info = await cacheInfo(username, req);
+        await redirectToWeb(callbackUrl, info, res);
+      })
+      .catch(async (e) => {
+        logger.error(e, "Log in as %s failed.", username);
+        await serveLoginHtml(true, callbackUrl, req, res);
+      });
 
   });
 }

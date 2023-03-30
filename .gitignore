@@ -6,3 +6,9 @@
 **/coverage/
 .eslintcache
 internal
+.turbo
+out
+dist
+version.json
+.pnpm-store
+.DS_Store

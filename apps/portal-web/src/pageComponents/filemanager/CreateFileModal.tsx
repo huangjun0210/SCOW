@@ -1,10 +1,22 @@
-import { Form, Input, message, Modal } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { App, Form, Input, Modal } from "antd";
 import { join } from "path";
 import { useState } from "react";
 import { api } from "src/apis";
 
 interface Props {
-  visible: boolean;
+  open: boolean;
   onClose: () => void;
   reload: () => void;
   cluster: string;
@@ -15,7 +27,10 @@ interface FormProps {
   newFileName: string;
 }
 
-export const CreateFileModal: React.FC<Props> = ({ visible, onClose, path, reload, cluster }) => {
+export const CreateFileModal: React.FC<Props> = ({ open, onClose, path, reload, cluster }) => {
+
+  const { message } = App.useApp();
+
   const [form] = Form.useForm<FormProps>();
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +50,7 @@ export const CreateFileModal: React.FC<Props> = ({ visible, onClose, path, reloa
 
   return (
     <Modal
-      visible={visible}
+      open={open}
       title="创建文件"
       okText={"确认"}
       cancelText="取消"

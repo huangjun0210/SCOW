@@ -1,7 +1,19 @@
-import { ReloadOutlined, RightOutlined } from "@ant-design/icons";
-import { Button, Input, Space } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { DatabaseOutlined, ReloadOutlined, RightOutlined } from "@ant-design/icons";
+import { Breadcrumb, Button, Input } from "antd";
 import Link from "next/link";
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 
 interface Props {
@@ -15,13 +27,17 @@ interface Props {
 const Bar = styled.div`
   display: flex;
   width: 100%;
-
 `;
 
 const BarStateBar = styled(Bar)`
-  border: 1px solid #d9d9d9;
-  border-radius: 2px;
-  padding-left: 8px;
+  border: 1px solid ${({ theme }) => theme.token.colorBorder};
+  border-radius: ${({ theme }) => theme.token.borderRadius}px;
+  padding: 0 8px;
+  margin: 0 4px;
+
+  .ant-breadcrumb {
+    align-self: center;
+  }
 `;
 
 export const PathBar: React.FC<Props> = ({ path, loading, reload, go, fullUrl }) => {
@@ -68,30 +84,31 @@ export const PathBar: React.FC<Props> = ({ path, loading, reload, go, fullUrl })
         ) : (
           <>
             <BarStateBar onClick={() => setState("input")}>
-              <Space>
-                <Link href={fullUrl("/")} passHref>
-                  <a onClick={(e) => e.stopPropagation()}>
-                    /
-                  </a>
-                </Link>
+              <Breadcrumb style={{ alignSelf: "center" }}>
+                <Breadcrumb.Item>
+                  <Link href={fullUrl("/")} title="/" onClick={(e) => e.stopPropagation()}>
+                    <DatabaseOutlined />
+                  </Link>
+                </Breadcrumb.Item>
                 {pathSegments.map((x, i) => (
-                  <Fragment key={x}>
-                    <Link href={fullUrl(pathSegments.slice(0, i + 1).join("/"))} key={i} passHref>
-                      <a onClick={(e) => e.stopPropagation()}>
-                        {x}
-                      </a>
+                  <Breadcrumb.Item key={i}>
+                    <Link
+                      href={fullUrl(pathSegments.slice(0, i + 1).join("/"))}
+                      key={i}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {x}
                     </Link>
-                    <span>
-                    /
-                    </span>
-                  </Fragment>
+                  </Breadcrumb.Item>
                 ))}
-              </Space>
+              </Breadcrumb>
             </BarStateBar>
-            <Button onClick={(e) => {
-              e.stopPropagation();
-              goOrReload();
-            }} icon={icon}
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                goOrReload();
+              }}
+              icon={icon}
             />
           </>
         )

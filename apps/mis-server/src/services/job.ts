@@ -1,23 +1,35 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { ensureNotUndefined, plugin } from "@ddadaal/tsgrpc-server";
 import { ServiceError, status } from "@grpc/grpc-js";
 import { Status } from "@grpc/grpc-js/build/src/constants";
 import { FilterQuery, QueryOrder, UniqueConstraintViolationException } from "@mikro-orm/core";
 import { MySqlDriver, SqlEntityManager } from "@mikro-orm/mysql";
 import { Decimal, decimalToMoney, moneyToNumber } from "@scow/lib-decimal";
+import {
+  GetJobsResponse,
+  JobBillingItem,
+  JobFilter,
+  JobInfo, JobServiceServer, JobServiceService,
+} from "@scow/protos/build/server/job";
 import { charge, pay } from "src/bl/charging";
+import { getActiveBillingItems } from "src/bl/PriceMap";
 import { misConfig } from "src/config/mis";
 import { Account } from "src/entities/Account";
 import { JobInfo as JobInfoEntity } from "src/entities/JobInfo";
 import { JobPriceChange } from "src/entities/JobPriceChange";
 import { AmountStrategy, JobPriceItem } from "src/entities/JobPriceItem";
 import { Tenant } from "src/entities/Tenant";
-import {
-  GetJobsReply,
-  JobBillingItem,
-  JobFilter,
-  JobInfo, JobServiceServer, JobServiceService,
-} from "src/generated/server/job";
-import { getActiveBillingItems } from "src/plugins/price";
 import { paginationProps } from "src/utils/orm";
 
 function toGrpc(x: JobInfoEntity) {
@@ -37,10 +49,10 @@ function toGrpc(x: JobInfoEntity) {
     nodesReq: x.nodesReq,
     partition: x.partition,
     qos: x.qos,
-    recordTime: x.recordTime,
-    timeEnd: x.timeEnd,
-    timeStart: x.timeStart,
-    timeSubmit: x.timeSubmit,
+    recordTime: x.recordTime.toISOString(),
+    timeEnd: x.timeEnd.toISOString(),
+    timeStart: x.timeStart.toISOString(),
+    timeSubmit: x.timeSubmit.toISOString(),
     timeUsed: x.timeUsed,
     timeWait: x.timeWait,
     timelimit: x.timelimit,
@@ -52,7 +64,7 @@ function toGrpc(x: JobInfoEntity) {
 
 async function filterJobs({
   clusters, accountName, jobEndTimeEnd, tenantName,
-  jobEndTimeStart, jobId, userId,
+  jobEndTimeStart, jobId, userId, startBiJobIndex,
 }: JobFilter, em: SqlEntityManager<MySqlDriver>) {
 
   const accountNames = (accountName === undefined && userId === undefined)
@@ -60,6 +72,7 @@ async function filterJobs({
     : accountName;
 
   return {
+    ...startBiJobIndex ? { biJobIndex: { $gte: startBiJobIndex } } : {},
     ...userId ? { user: userId } : {},
     ...clusters.length > 0 ? { cluster: clusters } : {},
     ...jobId
@@ -103,7 +116,7 @@ export const jobServiceServer = plugin((server) => {
         jobs: jobs.map(toGrpc),
         totalAccountPrice: decimalToMoney(new Decimal(total_account_price)),
         totalTenantPrice: decimalToMoney(new Decimal(total_tenant_price)),
-      } as GetJobsReply;
+      } as GetJobsResponse;
 
       return [reply];
     },
@@ -216,7 +229,7 @@ export const jobServiceServer = plugin((server) => {
 
       if (!job) {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message: `Job ${biJobIndex} is not found`,
         };
       }
 
@@ -256,10 +269,9 @@ export const jobServiceServer = plugin((server) => {
           request: { delta, jobId }, logger,
         }),
       );
-
       if (reply.code === "NOT_FOUND") {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message: `Cluster ${cluster} or  job ${jobId} is not found.`,
         };
       }
 
@@ -281,7 +293,7 @@ export const jobServiceServer = plugin((server) => {
 
       if (reply.code === "NOT_FOUND") {
         throw <ServiceError>{
-          code: Status.NOT_FOUND,
+          code: Status.NOT_FOUND, message: `Cluster ${cluster} or  job ${jobId} is not found.`,
         };
       }
 
@@ -311,24 +323,31 @@ export const jobServiceServer = plugin((server) => {
         path: item.path.join("."),
         tenantName: item.tenant?.getProperty("name"),
         price: decimalToMoney(item.price),
-        createTime: item.createTime,
+        createTime: item.createTime.toISOString(),
         amountStrategy: item.amount,
       });
 
-      if (activeOnly) {
-        const { defaultPrices, tenantSpecificPrices } = getActiveBillingItems(billingItems);
+      const { defaultPrices, tenantSpecificPrices } = getActiveBillingItems(billingItems);
 
-        const activePrices = tenantName
-          ? Object.values({ ...defaultPrices, ...tenantSpecificPrices[tenantName] })
-          : [
-            ...Object.values(defaultPrices),
-            ...Object.values(tenantSpecificPrices).map((x) => Object.values(x)).flat(),
-          ];
+      const activePrices = tenantName
+        ? Object.values({ ...defaultPrices, ...tenantSpecificPrices[tenantName] })
+        : [
+          ...Object.values(defaultPrices),
+          ...Object.values(tenantSpecificPrices).map((x) => Object.values(x)).flat(),
+        ];
 
-        return [{ items: activePrices.map(priceItemToGrpc) }];
-      } else {
-        return [{ items: billingItems.map(priceItemToGrpc) }];
-      }
+      return [{
+        activeItems: activePrices.map(priceItemToGrpc),
+        historyItems: activeOnly ? [] : billingItems.filter((x) => !activePrices.includes(x)).map(priceItemToGrpc) }];
+    },
+
+    getMissingDefaultPriceItems: async () => {
+
+      // check price map completeness
+      const priceMap = await server.ext.price.createPriceMap();
+      const missingItems = priceMap.getMissingDefaultPriceItems();
+
+      return [{ items: missingItems }];
 
     },
 
@@ -347,7 +366,8 @@ export const jobServiceServer = plugin((server) => {
       if (!(Object.values(AmountStrategy) as string[]).includes(amountStrategy)) {
         throw <ServiceError>{
           code: status.INVALID_ARGUMENT,
-          message: `Amount strategy ${amountStrategy} is not valid.` };
+          message: `Amount strategy ${amountStrategy} is not valid.`,
+        };
       }
 
       const item = new JobPriceItem({

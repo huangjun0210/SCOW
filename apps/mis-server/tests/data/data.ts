@@ -1,4 +1,16 @@
-import { SqlEntityManager } from "@mikro-orm/knex";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { SqlEntityManager } from "@mikro-orm/mysql";
 import { Account } from "src/entities/Account";
 import { Tenant } from "src/entities/Tenant";
 import { TenantRole, User } from "src/entities/User";
@@ -44,8 +56,47 @@ export async function insertInitialData(em: SqlEntityManager) {
 
   await em.persistAndFlush([anotherTenant, userC, accountC, uaCC]);
 
-  return { tenant, userA, userB, accountA, accountB, uaAA, uaAB, uaBB, anotherTenant };
+  return { tenant, userA, userB, userC, accountA, accountB, accountC, uaAA, uaAB, uaBB, uaCC, anotherTenant };
 
 }
 
 export type InitialData = Awaited<ReturnType<typeof insertInitialData>>;
+
+
+export async function insertBlockedData(em: SqlEntityManager) {
+
+  const tenant = await em.findOneOrFail(Tenant, { name: DEFAULT_TENANT_NAME });
+
+  const blockedUserA = new User({ name: "BlockedA", userId: "a", email: "a@a.com", tenant,
+    tenantRoles: [TenantRole.TENANT_ADMIN]});
+  const unblockedUserB = new User({ name: "BlockedB", userId: "b", email: "b@b.com", tenant });
+
+  const unblockedAccountA = new Account({ accountName: "hpca", comment: "", blocked: false, tenant });
+  const blockedAccountB = new Account({ accountName: "hpcb", comment: "", blocked: true, tenant });
+
+  const uaAA = new UserAccount({
+    account: unblockedAccountA,
+    user: blockedUserA,
+    role: UserRole.OWNER, status: UserStatus.BLOCKED,
+  });
+
+  const uaAB = new UserAccount({
+    account: unblockedAccountA,
+    user: unblockedUserB,
+    role: UserRole.ADMIN, status: UserStatus.UNBLOCKED,
+  });
+
+  const uaBB = new UserAccount({
+    account: blockedAccountB,
+    user: unblockedUserB,
+    role: UserRole.OWNER, status: UserStatus.UNBLOCKED,
+  });
+
+  await em.persistAndFlush([uaAA, uaAB, uaBB]);
+
+  return { tenant, blockedUserA, unblockedUserB, unblockedAccountA, blockedAccountB, uaAA, uaAB, uaBB };
+
+}
+
+export type BlockedData = Awaited<ReturnType<typeof insertBlockedData>>;
+

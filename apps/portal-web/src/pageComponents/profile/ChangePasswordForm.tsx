@@ -1,4 +1,16 @@
-import { Button, Form, Input, message, Spin } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { App, Button, Form, Input, Spin } from "antd";
 import React, { useState } from "react";
 import { api } from "src/apis";
 import { confirmPasswordFormItemProps, passwordRule } from "src/utils/form";
@@ -10,6 +22,7 @@ interface FormProps {
 }
 
 export const ChangePasswordForm: React.FC = () => {
+  const { message } = App.useApp();
 
   const [form] = Form.useForm<FormProps>();
 
@@ -21,7 +34,7 @@ export const ChangePasswordForm: React.FC = () => {
     api.changePassword({ body: { newPassword, oldPassword } })
       .httpError(412, () => { message.error("原密码不正确"); })
       .then(() => {
-        form.setFieldsValue({ oldPassword: "", newPassword: "", confirm: "" });
+        form.resetFields();
         message.success("密码更改成功！");
       })
       .finally(() => {
@@ -32,8 +45,11 @@ export const ChangePasswordForm: React.FC = () => {
 
   return (
     <Spin spinning={loading}>
-      <Form initialValues={undefined}
-        layout="vertical" form={form} onFinish={onFinish}
+      <Form
+        initialValues={undefined}
+        layout="vertical"
+        form={form}
+        onFinish={onFinish}
       >
         <Form.Item
           rules={[{ required: true }]}
@@ -43,7 +59,10 @@ export const ChangePasswordForm: React.FC = () => {
           <Input.Password />
         </Form.Item>
         <Form.Item
-          rules={[{ required: true }, passwordRule]}
+          rules={[
+            { required: true },
+            passwordRule,
+          ]}
           label="新密码"
           name="newPassword"
         >
@@ -58,7 +77,7 @@ export const ChangePasswordForm: React.FC = () => {
           <Input.Password />
         </Form.Item>
         <Form.Item>
-          <Button type="primary" htmlType="submit" >
+          <Button type="primary" htmlType="submit">
             提交
           </Button>
         </Form.Item>

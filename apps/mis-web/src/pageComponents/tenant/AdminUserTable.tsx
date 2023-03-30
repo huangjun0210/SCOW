@@ -1,23 +1,43 @@
-import { Button, Form, Input, Table } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { compareDateTime, formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { App, Button, Divider, Form, Input, Space, Table } from "antd";
 import React, { useMemo, useState } from "react";
+import { api } from "src/apis";
+import { ChangePasswordModalLink } from "src/components/ChangePasswordModal";
 import { FilterFormContainer } from "src/components/FilterFormContainer";
+import { TenantRoleSelector } from "src/components/TenantRoleSelector";
 import { FullUserInfo } from "src/models/User";
 import { GetTenantUsersSchema } from "src/pages/api/admin/getTenantUsers";
-import { formatDateTime } from "src/utils/datetime";
+import { User } from "src/stores/UserStore";
 
 interface Props {
   data: GetTenantUsersSchema["responses"]["200"] | undefined;
   isLoading: boolean;
   reload: () => void;
+  user: User;
 }
 
 interface FilterForm {
   idOrName: string | undefined;
 }
 
+
 export const AdminUserTable: React.FC<Props> = ({
-  data, isLoading,
+  data, isLoading, reload, user,
 }) => {
+
+  const { message } = App.useApp();
 
   const [form] = Form.useForm<FilterForm>();
 
@@ -56,30 +76,69 @@ export const AdminUserTable: React.FC<Props> = ({
         rowKey="id"
         scroll={{ x: true }}
       >
-        <Table.Column<FullUserInfo> dataIndex="id" title="用户ID"
+        <Table.Column<FullUserInfo>
+          dataIndex="id"
+          title="用户ID"
           sorter={(a, b) => a.id.localeCompare(b.id)}
           sortDirections={["ascend", "descend"]}
         />
-        <Table.Column<FullUserInfo> dataIndex="name" title="姓名"
+        <Table.Column<FullUserInfo>
+          dataIndex="name"
+          title="姓名"
           sorter={(a, b) => a.name.localeCompare(b.name)}
           sortDirections={["ascend", "descend"]}
         />
-        <Table.Column<FullUserInfo> dataIndex="email" title="邮箱"
+        <Table.Column<FullUserInfo>
+          dataIndex="email"
+          title="邮箱"
           sorter={(a, b) => a.email.localeCompare(b.email)}
           sortDirections={["ascend", "descend"]}
         />
-        <Table.Column<FullUserInfo> dataIndex="createTime" title="创建时间"
-          // TODO compare time string
-          sorter={(a, b) => a.createTime.localeCompare(b.createTime)}
+        <Table.Column<FullUserInfo>
+          dataIndex="tenantRoles"
+          title="租户角色"
+          render={(_, r) => (
+            <TenantRoleSelector reload={reload} roles={r.tenantRoles} userId={r.id} currentUser={user} />
+          )}
+        />
+        <Table.Column<FullUserInfo>
+          dataIndex="createTime"
+          title="创建时间"
+          sorter={(a, b) => compareDateTime(a.createTime, b.createTime)}
           sortDirections={["ascend", "descend"]}
           render={(d) => formatDateTime(d)}
         />
-        <Table.Column<FullUserInfo> dataIndex="affiliatedAccountNames" title="可用账户"
+        <Table.Column<FullUserInfo>
+          dataIndex="affiliatedAccountNames"
+          title="可用账户"
           render={(_, r) => r.accountAffiliations.map((x) => x.accountName).join(", ")}
         />
-        {/* <Table.Column<FullUserInfo> dataIndex="platformRoles" title="平台角色"
-          render={(_, r) => r.platformRoles.map((x) => PlatformRoleTexts[x]).join(", ")}
-        /> */}
+        <Table.Column<FullUserInfo>
+          dataIndex="changePassword"
+          title="操作"
+          render={(_, r) => (
+            <Space split={<Divider type="vertical" />}>
+              <ChangePasswordModalLink
+                userId={r.id}
+                name={r.name}
+                onComplete={async (oldPassword, newPassword) => {
+                  await api.changePasswordAsTenantAdmin({ body:{
+                    identityId: r.id,
+                    oldPassword: oldPassword,
+                    newPassword: newPassword,
+                  } })
+                    .httpError(404, () => { message.error("用户不存在"); })
+                    .httpError(412, () => { message.error("原密码错误"); })
+                    .httpError(501, () => { message.error("本功能在当前配置下不可用"); })
+                    .then(() => { message.success("修改成功"); })
+                    .catch(() => { message.error("修改失败"); });
+                }}
+              >
+              修改密码
+              </ChangePasswordModalLink>
+            </Space>
+          )}
+        />
       </Table>
     </div>
   );

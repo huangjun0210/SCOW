@@ -1,16 +1,28 @@
-import { JsonFetchResultPromiseLike } from "@ddadaal/next-typed-api-routes-runtime/lib/client";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { HttpError, JsonFetchResultPromiseLike } from "@ddadaal/next-typed-api-routes-runtime/lib/client";
 import { numberToMoney } from "@scow/lib-decimal";
+import type { RunningJob } from "@scow/protos/build/common/job";
+import type { Account } from "@scow/protos/build/server/account";
+import { JobInfo } from "@scow/protos/build/server/job";
+import type { AccountUserInfo, GetUserStatusResponse } from "@scow/protos/build/server/user";
 import { api } from "src/apis/api";
-import type { RunningJob } from "src/generated/common/job";
-import type { Account } from "src/generated/server/account";
-import { JobInfo } from "src/generated/server/job";
-import type { AccountUserInfo, GetUserStatusReply } from "src/generated/server/user";
 import { PlatformRole, TenantRole, UserInfo, UserRole, UserStatus } from "src/models/User";
 import { DEFAULT_TENANT_NAME } from "src/utils/constants";
 
 export type MockApi<TApi extends Record<
   string,
- (...args : any[]) => JsonFetchResultPromiseLike<any>>
+ (...args: any[]) => JsonFetchResultPromiseLike<any>>
  > = { [key in keyof TApi]: null | (
     (...args: Parameters<TApi[key]>) =>
     Promise<
@@ -92,19 +104,120 @@ const mockUsers = [
   },
 ];
 
+
 export const mockApi: MockApi<typeof api> = {
+
+  getMissingDefaultPriceItems: async () => {
+    return { items: ["test.test", "test1.test2"]};
+  },
+
+  getAllTenants: async () => (
+    {
+      totalCount: 3,
+      platformTenants: [{
+        tenantId: 1,
+        tenantName: "test1",
+        balance: numberToMoney(0.0000),
+        userCount: 1,
+        accountCount:1,
+        createTime: "2022-10-05T23:49:50.000Z",
+      },
+      {
+        tenantId: 2,
+        tenantName: "test2",
+        balance: numberToMoney(10.0000),
+        userCount: 4,
+        accountCount:2,
+        createTime: "2022-10-05T23:49:50.000Z",
+      },
+      {
+        tenantId: 3,
+        tenantName: "test3",
+        balance: numberToMoney(10.5),
+        userCount: 5,
+        accountCount:3,
+        createTime: "2022-10-05T23:49:50.000Z",
+      },
+      ],
+    }),
+
+  getAllUsers: async () => ({
+    totalCount: 3,
+    platformUsers: [
+      {
+        userId: "123",
+        name: "testuser",
+        availableAccounts: ["a_123"],
+        tenantName: "tenant1",
+        createTime: "2022-10-05T23:49:50.000Z",
+        platformRoles: [PlatformRole.PLATFORM_FINANCE, PlatformRole.PLATFORM_ADMIN],
+      },
+      {
+        userId: "test01",
+        name: "test01",
+        availableAccounts: ["a_test", "a_test01"],
+        tenantName: "tenant2",
+        createTime: "2022-10-05T23:49:50.000Z",
+        platformRoles: [PlatformRole.PLATFORM_FINANCE, PlatformRole.PLATFORM_ADMIN],
+      },
+      {
+        userId: "test02",
+        name: "test02",
+        availableAccounts: ["a_test", "a_test02"],
+        tenantName: "tenant2",
+        createTime: "2022-10-05T23:49:50.000Z",
+        platformRoles: [PlatformRole.PLATFORM_FINANCE],
+      },
+      {
+        userId: "test03",
+        name: "test03",
+        availableAccounts: ["a_test", "a_test03"],
+        tenantName: "tenant2",
+        createTime: "2022-10-05T23:49:50.000Z",
+        platformRoles: [],
+      },
+    ],
+  }),
+
+  userExists: async () => ({
+    existsInScow: false,
+    existsInAuth: false,
+  }),
+
+  setPlatformRole: async () => ({ executed: true }),
+
+  unsetPlatformRole: async () => ({ executed: false }),
+
+  setTenantRole: async () => ({ executed: true }),
+
+  unsetTenantRole: async () => ({ executed: false }),
+
   addBillingItem: async () => null,
 
   getTenants: async () => ({ names: ["DEFAULT", "another"]}),
 
-  getBillingItems: async () => ({ items: [
-    { id: "HPC01", path: "hpc01.compute.low", price: numberToMoney(0.04), amountStrategy: "gpu" },
-    { id: "HPC02", path: "hpc01.compute.normal", price: numberToMoney(0.06), amountStrategy: "gpu" },
-    { id: "HPC03", path: "hpc01.compute.high", price: numberToMoney(0.08), amountStrategy: "gpu" },
-    { id: "HPC04", path: "hpc01.GPU.low", price: numberToMoney(10.00), amountStrategy: "gpu" },
-    { id: "HPC05", path: "hpc01.GPU.normal", price: numberToMoney(12.00), amountStrategy: "gpu" },
-    { id: "HPC06", path: "hpc01.GPU.high", price: numberToMoney(14.00), amountStrategy: "gpu" },
-  ]}),
+  getBillingItems: async () => ({ 
+    activeItems: [
+      { cluster: "hpc01", partition: "compute", qos: "low", 
+        priceItem: { itemId: "HPC08", price: numberToMoney(0.01), amountStrategy: "max-cpusAlloc-mem" } },
+      { cluster: "hpc01", partition: "compute", qos: "normal", 
+        priceItem: { itemId: "HPC02", price: numberToMoney(0.06), amountStrategy: "gpu" } },
+      { cluster: "hpc01", partition: "compute", qos: "high", 
+        priceItem: { itemId: "HPC03", price: numberToMoney(0.08), amountStrategy: "gpu" } },
+      { cluster: "hpc01", partition: "GPU", qos: "low", 
+        priceItem: { itemId: "HPC04", price: numberToMoney(10.00), amountStrategy: "gpu" } },
+      { cluster: "hpc01", partition: "GPU", qos: "normal", 
+        priceItem: { itemId: "HPC05", price: numberToMoney(12.00), amountStrategy: "gpu" } },
+      { cluster: "hpc01", partition: "GPU", qos: "high", 
+        priceItem: { itemId: "HPC06", price: numberToMoney(14.00), amountStrategy: "gpu" } },
+    ],
+    historyItems: [
+      { cluster: "hpc01", partition: "compute", qos: "low", 
+        priceItem: { itemId: "HPC01", price: numberToMoney(0.04), amountStrategy: "max-cpusAlloc-mem" } },
+      { cluster: "hpc01", partition: "compute", qos: "low", 
+        priceItem: { itemId: "HPC07", price: numberToMoney(0.02), amountStrategy: "gpu" } },
+    ],
+  }),
 
   setAsInitAdmin: async () => null,
   unsetInitAdmin: async () => null,
@@ -115,11 +228,39 @@ export const mockApi: MockApi<typeof api> = {
 
   getBillingTable: null,
 
-  getIcon: async () => undefined,
-
-  createInitAdmin: async () => null,
+  createInitAdmin: async () => ({ createdInAuth: false }),
 
   importUsers: async () => null,
+
+  getClusterUsers: async () => {
+    return ({
+      accounts: [
+        {
+          accountName: "a_user1",
+          users: [
+            { userId: "user1", userName: "user1", state: "allowed!" }, 
+            { userId: "user2", userName: "user2", state: "allowed!" },
+          ],
+          owner: "user1",
+          included: false,
+        },
+        {
+          accountName: "account2",
+          users: [
+            { userId: "user2", userName: "user2", state: "allowed!" }, 
+            { userId: "user3", userName: "user3", state: "allowed!" },
+          ],
+          included: false,
+        },
+        {
+          accountName: "a_user4",
+          users: [{ userId: "user4", userName: "user4", state: "allowed!" }],
+          owner: "该账户已导入",
+          included: true,
+        },
+      ],
+    });
+  },
 
   completeInit: async () => null,
 
@@ -159,6 +300,17 @@ export const mockApi: MockApi<typeof api> = {
     type: "Task",
   }], totalCount: 1, total: 10 }),
 
+  getTenantPayments: async () => ({ results: [{
+    amount: 10,
+    comment: "123",
+    index: 1,
+    time: "123",
+    tenantName: "default",
+    ipAddress: "127.0.0.1",
+    operatorId: "123",
+    type: "Task",
+  }], totalCount: 1, total: 10 }),
+
   getUsedPayTypes: async () => ({ types: ["Pay", "JobPriceChange"]}),
 
   changeJobPrice: async () => ({ count: 10 }),
@@ -167,6 +319,7 @@ export const mockApi: MockApi<typeof api> = {
 
   getJobInfo: async () => ({ jobs: [mockJobInfo], totalCount: 1, totalPrice: numberToMoney(100) }),
   financePay: async () => ({ balance: 123 }),
+  tenantFinancePay: async () => ({ balance: 123 }),
   authCallback: async () => undefined as never,
   getUserStatus: async () => MOCK_USER_STATUS,
   getAccountUsers: async () => ({
@@ -193,10 +346,17 @@ export const mockApi: MockApi<typeof api> = {
       },
     ] as AccountUserInfo[],
   }),
-  addUserToAccount: async () => null,
-  // addUserToAccount: async () => { throw new HttpError(404, { code: "USER_NOT_FOUND" }); },
+  // addUserToAccount: async () => null,
+  addUserToAccount: async ({ body }) => {
+    if (body.name === "404") {
+      throw new HttpError(404, { code: "USER_NOT_FOUND" });
+    } else {
+      return null;
+    }
+  },
   blockUserInAccount: async () => ({ executed: true }),
   unblockUserInAccount: async () => ({ executed: true }),
+  updateBlockStatus: async () => null,
   removeUserFromAccount: async () => null,
   setAdmin: async () => ({ executed: true }),
   unsetAdmin: async () => ({ executed: false }),
@@ -219,8 +379,13 @@ export const mockApi: MockApi<typeof api> = {
   }], totalCount: 1 }),
 
   changePassword: async () => null,
-  createUser: async () => null,
-
+  changePasswordAsPlatformAdmin: async () => null,
+  changePasswordAsTenantAdmin: async () => null,
+  createUser: async () => (
+    { id: 1,
+      createdInAuth: false,
+    }),
+  createTenant: async () => null,
   validateToken: async () => MOCK_USER_INFO,
 };
 
@@ -239,7 +404,7 @@ export const MOCK_USER_INFO = {
   ],
 } as UserInfo;
 
-export const MOCK_USER_STATUS: GetUserStatusReply = {
+export const MOCK_USER_STATUS: GetUserStatusResponse = {
   storageQuotas: {
     "WM2": 100,
     "WM1": 200,
@@ -252,3 +417,4 @@ export const MOCK_USER_STATUS: GetUserStatusReply = {
     },
   },
 };
+

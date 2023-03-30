@@ -1,10 +1,22 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { asyncUnaryCall } from "@ddadaal/tsgrpc-client";
+import { DesktopServiceClient } from "@scow/protos/build/portal/desktop";
 import { authenticate } from "src/auth/server";
-import { displayIdToPort } from "src/clusterops/slurm/bl/port";
+import { getClient } from "src/utils/client";
 import { publicConfig } from "src/utils/config";
-import { dnsResolve } from "src/utils/dns";
 import { route } from "src/utils/route";
-import { getClusterLoginNode, sshConnect } from "src/utils/ssh";
-import { refreshPassword } from "src/utils/turbovnc";
+import { handlegRPCError } from "src/utils/server";
 
 export interface LaunchDesktopSchema {
   method: "POST";
@@ -16,7 +28,7 @@ export interface LaunchDesktopSchema {
 
   responses: {
     200: {
-      node: string;
+      host: string;
       port: number;
       password: string;
     };
@@ -28,9 +40,6 @@ export interface LaunchDesktopSchema {
 const auth = authenticate(() => true);
 
 export default /* #__PURE__*/route<LaunchDesktopSchema>("LaunchDesktopSchema", async (req, res) => {
-
-
-
   if (!publicConfig.ENABLE_LOGIN_DESKTOP) {
     return { 501: null };
   }
@@ -41,15 +50,15 @@ export default /* #__PURE__*/route<LaunchDesktopSchema>("LaunchDesktopSchema", a
 
   const { cluster, displayId } = req.body;
 
-  const host = getClusterLoginNode(cluster);
+  const client = getClient(DesktopServiceClient);
 
-  if (!host) { return { 400: { code: "INVALID_CLUSTER" } }; }
+  return await asyncUnaryCall(client, "connectToDesktop", {
+    cluster, displayId, userId: info.identityId,
+  }).then(async ({ host, password, port }) => ({ 200: {
+    host,
+    password,
+    port,
+  } }), handlegRPCError({
 
-  return await sshConnect(host, info.identityId, req.log, async (ssh) => {
-
-    // refresh the otp
-    const password = await refreshPassword(ssh, req.log, displayId);
-
-    return { 200: { node: await dnsResolve(host), port: displayIdToPort(displayId), password } };
-  });
+  }));
 });

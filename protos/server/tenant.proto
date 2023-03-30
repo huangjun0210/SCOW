@@ -1,13 +1,28 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 syntax = "proto3";
 
 package scow.server;
 
 import "common/money.proto";
+import "google/protobuf/timestamp.proto";
 
-message GetTenantInfoRequest { string tenant_name = 1; }
+message GetTenantInfoRequest {
+  string tenant_name = 1;
+}
 
 // NOT_FOUND: tenant is not found
-message GetTenantInfoReply {
+message GetTenantInfoResponse {
   common.Money balance = 1;
   uint32 account_count = 2;
   uint32 user_count = 3;
@@ -20,10 +35,37 @@ message GetTenantInfoReply {
   repeated AdminInfo admins = 4;
 }
 
-message GetTenantsRequest {}
-message GetTenantsReply { repeated string names = 1; }
+message GetTenantsRequest {
+}
+message GetTenantsResponse {
+  repeated string names = 1;
+}
+
+
+message PlatformTenantsInfo {
+  uint32 tenant_id = 1;
+  string tenant_name = 2;
+  uint32 user_count = 3;
+  uint32 account_count = 4;
+  common.Money balance = 5;
+  google.protobuf.Timestamp create_time = 6;
+}
+message GetAllTenantsRequest {
+}
+message GetAllTenantsResponse {
+  uint32 total_count = 1;
+  repeated PlatformTenantsInfo platform_tenants = 2;
+}
+
+message CreateTenantRequest {
+  string name=1;
+}
+message CreateTenantResponse {
+}
 
 service TenantService {
-  rpc GetTenantInfo(GetTenantInfoRequest) returns (GetTenantInfoReply);
-  rpc GetTenants(GetTenantsRequest) returns (GetTenantsReply);
+  rpc GetTenantInfo(GetTenantInfoRequest) returns (GetTenantInfoResponse);
+  rpc GetTenants(GetTenantsRequest) returns (GetTenantsResponse);
+  rpc GetAllTenants(GetAllTenantsRequest) returns (GetAllTenantsResponse);
+  rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
 }

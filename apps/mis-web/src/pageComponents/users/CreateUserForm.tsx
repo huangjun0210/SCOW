@@ -1,7 +1,19 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Form, Input } from "antd";
 import React from "react";
-import { confirmPasswordFormItemProps, emailRule, passwordRule } from "src/utils/form";
-
+import { publicConfig } from "src/utils/config";
+import { confirmPasswordFormItemProps, emailRule, passwordRule, userIdRule } from "src/utils/form";
 export interface CreateUserFormFields {
   identityId: string;
   name: string;
@@ -10,52 +22,56 @@ export interface CreateUserFormFields {
   confirmPassword: string;
 }
 
-interface Props {
-  noPassword?: boolean;
-}
 
-export const CreateUserForm: React.FC<Props> = ({ noPassword }) => {
+
+export const CreateUserForm: React.FC = () => {
 
   const form = Form.useFormInstance<CreateUserFormFields>();
 
   return (
     <>
-      <Form.Item label="用户ID" name="identityId"
+      <Form.Item
+        label="用户ID"
+        name="identityId"
         rules={[
-          { pattern: /^[a-z0-9_]+$/, message: "只能由小写英文字符、数字和下划线组成" },
           { required: true },
+          userIdRule,
         ]}
+
       >
-        <Input placeholder="只能由小写英文字符、数字和下划线组成" />
+        <Input placeholder={publicConfig.USERID_PATTERN_MESSAGE} />
       </Form.Item>
       <Form.Item label="用户姓名" name="name" rules={[{ required: true }]}>
         <Input />
       </Form.Item>
-      <Form.Item label="用户邮箱" name="email"
+      <Form.Item
+        label="用户邮箱"
+        name="email"
         rules={[{ required: true }, emailRule]}
       >
         <Input />
       </Form.Item>
+      <Form.Item
+        label="用户密码"
+        name="password"
+        rules={[{ required:true }, passwordRule]}
+      >
+        <Input.Password placeholder={passwordRule.message} />
+      </Form.Item>
       {
-        noPassword ? undefined : (
+        publicConfig.ENABLE_CREATE_USER ? (
           <>
             <Form.Item
-              rules={[{ required: true }, passwordRule]}
-              label="密码"
-              name="password"
-            >
-              <Input.Password placeholder={passwordRule.message} />
-            </Form.Item>
-            <Form.Item
-              name="confirmPassword"
               label="确认密码"
+              name="confirmPassword"
               hasFeedback
               {...confirmPasswordFormItemProps(form, "password")}
             >
-              <Input.Password />
+              <Input.Password placeholder={passwordRule.message} />
             </Form.Item>
           </>
-        )
+        ) : undefined
+
       }
     </>
   );

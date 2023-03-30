@@ -1,9 +1,21 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { ExclamationCircleOutlined } from "@ant-design/icons";
-import { Form, InputNumber, message, Modal, Space } from "antd";
+import type { Money } from "@scow/protos/build/common/money";
+import { App, Form, InputNumber, Modal, Space } from "antd";
 import { useState } from "react";
 import { api } from "src/apis";
 import { ModalLink } from "src/components/ModalLink";
-import type { Money } from "src/generated/common/money";
 import { moneyToString } from "src/utils/money";
 
 interface Props {
@@ -12,7 +24,7 @@ interface Props {
   accountName: string;
   currentLimit?: Money;
   currentUsed?: Money;
-  visible: boolean;
+  open: boolean;
   onClose: () => void;
   reload: () => void;
 }
@@ -22,10 +34,12 @@ interface FormFields {
 }
 
 export const JobChargeLimitModal: React.FC<Props> = ({
-  accountName, onClose, reload, userId, visible, username, currentLimit, currentUsed,
+  accountName, onClose, reload, userId, open, username, currentLimit, currentUsed,
 }) => {
   const [form] = Form.useForm<FormFields>();
   const [loading, setLoading] = useState(false);
+
+  const { message, modal } = App.useApp();
 
   const onOk = async () => {
     const { limit } = await form.validateFields();
@@ -42,7 +56,7 @@ export const JobChargeLimitModal: React.FC<Props> = ({
   return (
     <Modal
       title={`${currentLimit === undefined ? "设置" : "修改"}用户作业费用限额`}
-      visible={visible}
+      open={open}
       onCancel={onClose}
       confirmLoading={loading}
       onOk={onOk}
@@ -67,7 +81,7 @@ export const JobChargeLimitModal: React.FC<Props> = ({
                   </strong>
                 </span>
                 <a onClick={() => {
-                  Modal.confirm({
+                  modal.confirm({
                     title: "取消作业费用限额",
                     icon: <ExclamationCircleOutlined />,
                     content: "确认要取消此用户在此账户中的限额吗？",

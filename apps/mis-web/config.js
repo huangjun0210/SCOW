@@ -1,14 +1,15 @@
 // @ts-check
 
-const { envConfig, getConfigFromFile, parseKeyValue, regex, str, bool } = require("@scow/config");
-const { getClusterConfigs } = require("@scow/config/build/appConfig/cluster");
-const { getMisConfig } = require("@scow/config/build/appConfig/mis");
-const { getClusterTextsConfig } = require("@scow/config/build/appConfig/clusterTexts");
-const { DEFAULT_PRIMARY_COLOR, getUiConfig } = require("@scow/config/build/appConfig/ui");
+const { envConfig, str, bool } = require("@scow/lib-config");
+const { getClusterConfigs } = require("@scow/config/build/cluster");
+const { getMisConfig } = require("@scow/config/build/mis");
+const { getCommonConfig } = require("@scow/config/build/common");
+const { getClusterTextsConfig } = require("@scow/config/build/clusterTexts");
+const { DEFAULT_PRIMARY_COLOR, getUiConfig } = require("@scow/config/build/ui");
 const { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } = require("next/constants");
 const { join } = require("path");
-const { fetch } = require("undici");
 const { getCapabilities } = require("@scow/lib-auth");
+const { readVersionFile } = require("@scow/utils/build/version");
 
 /**
  * Get auth capabilities
@@ -26,19 +27,28 @@ async function queryCapabilities(authUrl, phase) {
 }
 
 const specs = {
+  AUTH_EXTERNAL_URL: str({ desc: "认证系统的URL。如果部署在和本系统一样的域名下，可以只写完整路径", default: "/auth" }),
 
-  BASE_PATH: str({ desc: "整个系统的base path", default: "/" }),
   SERVER_URL: str({ desc: "后端服务地址", default: "mis-server:5000" }),
 
+  AUTH_ORIGIN: str({ desc: "认证系统的域名。如果认证系统和本系统部署在同一个域名下，不填写", default: undefined }),
   AUTH_INTERNAL_URL: str({ desc: "认证服务内网地址", default: "http://auth:5000" }),
 
   PORTAL_DEPLOYED: bool({ desc: "是否部署了门户系统", default: false }),
-  PORTAL_URL: str({ desc: "如果部署了门户系统，设置URL或者路径。相对于整个系统的base path。将会覆盖配置文件。空字符串等价于未部署门户系统", default: "" }),
+  PORTAL_URL: str({ desc: "如果部署了门户系统，门户系统的URL。如果和本系统域名相同，可以只写完整路径。将会覆盖配置文件。空字符串等价于未部署门户系统", default: "" }),
 };
+
+const mockEnv = process.env.NEXT_PUBLIC_USE_MOCK === "1";
 
 const config = envConfig(specs, process.env);
 
-const buildRuntimeConfig = async (phase) => {
+/**
+ * Build system runtime config
+ * @param {string} phase Next.js phase
+ * @param {string} basePath basePath of the system
+ * @returns RuntimeConfig
+ */
+const buildRuntimeConfig = async (phase, basePath) => {
 
   const building = phase === PHASE_PRODUCTION_BUILD;
   const dev = phase === PHASE_DEVELOPMENT_SERVER;
@@ -52,24 +62,25 @@ const buildRuntimeConfig = async (phase) => {
     require("dotenv").config({ path: "env/.env.dev" });
   }
 
+  const config = envConfig(specs, process.env);
+
   // query auth capabilities to set optional auth features
   const capabilities = await queryCapabilities(config.AUTH_INTERNAL_URL, phase);
 
-  // load clusters.json
+  const configBasePath = mockEnv ? join(__dirname, "config") : undefined;
 
+  const clusters = getClusterConfigs(configBasePath);
+  const clusterTexts = getClusterTextsConfig(configBasePath);
+  const uiConfig = getUiConfig(configBasePath);
+  const misConfig = getMisConfig(configBasePath);
 
-  const basePath = production ? undefined : join(__dirname, "config");
-
-  const clusters = getClusterConfigs(basePath);
-  const clusterTexts = getClusterTextsConfig(basePath);
-  const uiConfig = getUiConfig(basePath);
-  const misConfig = getMisConfig(basePath);
+  const commonConfig = getCommonConfig(configBasePath);
 
   /**
    * @type {import ("./src/utils/config").ServerRuntimeConfig}
    */
   const serverRuntimeConfig = {
-    BASE_PATH: config.BASE_PATH,
+    AUTH_EXTERNAL_URL: config.AUTH_EXTERNAL_URL,
     AUTH_INTERNAL_URL: config.AUTH_INTERNAL_URL,
     CLUSTERS_CONFIG: clusters,
     CLUSTER_TEXTS_CONFIG: clusterTexts,
@@ -77,8 +88,6 @@ const buildRuntimeConfig = async (phase) => {
     DEFAULT_PRIMARY_COLOR,
     SERVER_URL: config.SERVER_URL,
   };
-
-  const portalUrlSetting = config.PORTAL_URL || misConfig.portalUrl;
 
   /**
    * @type {import("./src/utils/config").PublicRuntimeConfig}
@@ -96,10 +105,20 @@ const buildRuntimeConfig = async (phase) => {
     ACCOUNT_NAME_PATTERN: misConfig.accountNamePattern?.regex,
     ACCOUNT_NAME_PATTERN_MESSAGE: misConfig.accountNamePattern?.errorMessage,
 
-    PORTAL_URL: config.PORTAL_DEPLOYED ? join(config.BASE_PATH, config.PORTAL_URL || misConfig.portalUrl || "") : undefined,
+    USERID_PATTERN: misConfig.userIdPattern?.regex,
+    USERID_PATTERN_MESSAGE: misConfig.userIdPattern?.errorMessage,
+
+    PORTAL_URL: config.PORTAL_DEPLOYED ? (config.PORTAL_URL || misConfig.portalUrl || "") : undefined,
+
+    PASSWORD_PATTERN: commonConfig.passwordPattern?.regex,
+    PASSWORD_PATTERN_MESSAGE: commonConfig.passwordPattern?.errorMessage,
+
+    BASE_PATH: basePath,
   };
 
   if (!building) {
+    console.log("Running @scow/mis-web");
+    console.log("Version: ", readVersionFile());
     console.log("Server Runtime Config", serverRuntimeConfig);
     console.log("Public Runtime Config", publicRuntimeConfig);
   }

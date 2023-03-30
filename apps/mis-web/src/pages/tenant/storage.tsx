@@ -1,14 +1,28 @@
-import { Button, Form, Input, InputNumber, message, Select } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { FormLayout } from "@scow/lib-web/build/layouts/FormLayout";
+import { App, Button, Form, Input, InputNumber, Select } from "antd";
 import { NextPage } from "next";
 import React, { useState } from "react";
+import { useStore } from "simstate";
 import { api } from "src/apis";
 import { requireAuth } from "src/auth/requireAuth";
 import { SingleClusterSelector } from "src/components/ClusterSelector";
 import { DisabledA } from "src/components/DisabledA";
 import { PageTitle } from "src/components/PageTitle";
-import { FormLayout } from "src/layouts/FormLayout";
 import { TenantRole } from "src/models/User";
 import type { ChangeStorageMode } from "src/pages/api/admin/changeStorage";
+import { DefaultClusterStore } from "src/stores/DefaultClusterStore";
 import { Cluster } from "src/utils/config";
 import { Head } from "src/utils/head";
 
@@ -33,6 +47,10 @@ const StorageForm: React.FC = () => {
 
   const [current, setCurent] = useState<number | undefined>(undefined);
   const [currentLoading, setCurrentLoading] = useState(false);
+
+  const defaultClusterStore = useStore(DefaultClusterStore);
+
+  const { message } = App.useApp();
 
   const submit = async () => {
     const { value, userId, cluster, mode } = await form.validateFields();
@@ -65,20 +83,26 @@ const StorageForm: React.FC = () => {
   };
 
   return (
-    <Form form={form}
+    <Form
+      form={form}
       wrapperCol={{ span: 20 }}
       labelCol={{ span: 4 }}
       labelAlign="right"
       onFinish={submit}
       initialValues={{ mode: "SET", value: 1 }}
     >
-      <Form.Item<FormProps> name="userId" label="用户ID"
+      <Form.Item
+        name="userId"
+        label="用户ID"
         rules={[{ required: true }]}
       >
         <Input />
       </Form.Item>
-      <Form.Item<FormProps> name="cluster" label="集群"
+      <Form.Item
+        name="cluster"
+        label="集群"
         rules={[{ required: true }]}
+        initialValue={defaultClusterStore.cluster}
       >
         <SingleClusterSelector />
       </Form.Item>

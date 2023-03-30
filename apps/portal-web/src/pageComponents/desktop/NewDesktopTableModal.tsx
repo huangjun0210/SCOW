@@ -1,26 +1,50 @@
-import { Form, Modal, Select } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { App, Form, Modal, Select } from "antd";
 import React, { useState } from "react";
+import { useAsync } from "react-async";
 import { api } from "src/apis";
-import { SingleClusterSelector } from "src/components/ClusterSelector";
-import { Cluster, publicConfig } from "src/utils/config";
+import { Cluster } from "src/utils/config";
 import { openDesktop } from "src/utils/vnc";
 
 export interface Props {
-  visible: boolean;
+  open: boolean;
   onClose: () => void;
   reload: () => void;
+  cluster: Cluster;
 }
 
-interface ClusterInfo {
-  cluster: Cluster;
+interface FormInfo {
   wm: string;
 }
 
+const promiseFn = async () => api.listAvailableWms({ query: {} });
 
-export const NewDesktopTableModal: React.FC<Props> = ({ visible, onClose, reload }) => {
-  const defaultWm = publicConfig.LOGIN_DESKTOP_WMS[0];
+export const NewDesktopTableModal: React.FC<Props> = ({ open, onClose, reload, cluster }) => {
 
-  const [form] = Form.useForm<ClusterInfo>();
+  const [form] = Form.useForm<FormInfo>();
+
+  const { data, isLoading } = useAsync({
+    promiseFn,
+    onResolve({ wms }) {
+      if (wms.length > 0) {
+        form.setFieldValue("wm", wms[0].wm);
+      }
+    },
+  });
+
+  const { modal } = App.useApp();
+
   const [submitting, setSubmitting] = useState(false);
 
   const onOk = async () => {
@@ -30,11 +54,11 @@ export const NewDesktopTableModal: React.FC<Props> = ({ visible, onClose, reload
     setSubmitting(true);
 
     // Create new desktop
-    await api.createDesktop({ body: { cluster: values.cluster.id, wm: values.wm } })
+    await api.createDesktop({ body: { cluster: cluster.id, wm: values.wm } })
       .httpError(409, (e) => {
         const { code } = e;
         if (code === "TOO_MANY_DESKTOPS") {
-          Modal.error({
+          modal.error({
             title: "新建桌面失败",
             content: "该集群桌面数目达到最大限制",
           });
@@ -43,40 +67,28 @@ export const NewDesktopTableModal: React.FC<Props> = ({ visible, onClose, reload
         }
       })
       .then((resp) => {
-        openDesktop(resp.node, resp.port, resp.password);
+        openDesktop(resp.host, resp.port, resp.password);
         onClose();
         reload();
       })
       .finally(() => { setSubmitting(false); });
   };
 
-
   return (
     <Modal
       title="新建桌面"
-      visible={visible}
+      open={open}
       onOk={form.submit}
       confirmLoading={submitting}
       onCancel={onClose}
     >
-      <Form form={form} initialValues={{ cluster: publicConfig.CLUSTERS[0], wm: defaultWm.wm }} onFinish={onOk}>
-        <Form.Item
-          label="集群"
-          name="cluster"
-          rules={[
-            {
-              required: true,
-            },
-          ]}
-        >
-          <SingleClusterSelector />
-        </Form.Item>
+      <Form form={form} onFinish={onOk}>
         <Form.Item label="桌面" name="wm" required>
           <Select
-            options={publicConfig.LOGIN_DESKTOP_WMS.map(({ name, wm }) =>
+            loading={isLoading}
+            options={data?.wms.map(({ name, wm }) =>
               ({ label: name, value: wm }))}
           />
-
         </Form.Item>
       </Form>
     </Modal>

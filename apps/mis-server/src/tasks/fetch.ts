@@ -1,11 +1,23 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Logger } from "@ddadaal/tsgrpc-server";
-import { ServiceError } from "@grpc/grpc-js";
-import { Status } from "@grpc/grpc-js/build/src/constants";
 import { MikroORM, QueryOrder } from "@mikro-orm/core";
 import { MariaDbDriver } from "@mikro-orm/mariadb";
 import { SqlEntityManager } from "@mikro-orm/mysql";
-import { parsePlaceholder } from "@scow/config";
-import { charge } from "src/bl/charging";
+import { parsePlaceholder } from "@scow/lib-config";
+import { addJobCharge, charge } from "src/bl/charging";
+import { emptyJobPriceInfo } from "src/bl/jobPrice";
+import { clusterNameToScowClusterId } from "src/config/clusters";
 import { misConfig } from "src/config/mis";
 import { Account } from "src/entities/Account";
 import { JobInfo } from "src/entities/JobInfo";
@@ -23,7 +35,7 @@ export const createSourceDbOrm = async (logger: Logger) => {
     user: misConfig.fetchJobs.db.user,
     dbName: misConfig.fetchJobs.db.dbName,
     password: misConfig.fetchJobs.db.password,
-    type: "mariadb",
+    type: misConfig.fetchJobs.db.type,
     forceUndefined: true,
     logger: (msg) => logger.info(msg),
     entities: [OriginalJob],
@@ -115,12 +127,12 @@ export async function fetchJobs(
           const tenant = accountTenantMap.get(i.account);
 
           if (!tenant) {
-            throw new Error(`Account ${i.account} doesn't exist.`);
+            logger.warn("Account %s doesn't exist. Doesn't charge the job.", i.account);
           }
 
-          const price = priceMap.calculatePrice({
+          const price = tenant ? priceMap.calculatePrice({
             biJobIndex: i.biJobIndex,
-            cluster: i.cluster,
+            cluster: clusterNameToScowClusterId(i.cluster),
             cpusAlloc: i.cpusAlloc,
             gpu: i.gpu,
             memAlloc: i.memAlloc,
@@ -130,7 +142,7 @@ export async function fetchJobs(
             timeUsed: i.timeUsed,
             account: i.account,
             tenant,
-          });
+          }) : emptyJobPriceInfo();
 
           // 从job_table读出来的数据实际上是+8时区，但是读出来的时间字符串中不包含时区信息
           // 由于容器本身是+0时区，所以程序将会以为读出来的是+0时区的时间
@@ -145,10 +157,7 @@ export async function fetchJobs(
               i[k] = convertToUTC(i[k]);
             });
 
-          const pricedJob = new JobInfo(i, tenant,
-            price.tenant.price, price.tenant.billingItemId,
-            price.account.price, price.account.billingItemId,
-          );
+          const pricedJob = new JobInfo(i, tenant, price);
 
           em.persist(pricedJob);
 
@@ -157,43 +166,43 @@ export async function fetchJobs(
 
         // add job charge for user account
 
-        await Promise.all(pricedJobs.map(async (x) => {
-          // add job charge for the user
-          const ua = await em.findOne(UserAccount, {
-            account: { accountName: x.account },
-            user: { userId: x.user },
-          }, {
-            populate: ["user", "account", "account.tenant"],
-          });
+        await Promise.all(pricedJobs
+          .map(async (x) => {
+            // add job charge for the user
+            const ua = await em.findOne(UserAccount, {
+              account: { accountName: x.account },
+              user: { userId: x.user },
+            }, {
+              populate: ["user", "account", "account.tenant"],
+            });
 
-          if (!ua) {
-            throw <ServiceError>{
-              code: Status.NOT_FOUND,
-              message: `User ${x.user} in account ${x.account} is not found.`,
-            };
-          }
+            if (!ua) {
+              logger.warn({ biJobIndex: x.biJobIndex },
+                "User %s in account %s is not found. Don't charge the job.", x.user, x.account);
+            }
 
-          const comment = parsePlaceholder(misConfig.jobChargeComment, x);
+            const comment = parsePlaceholder(misConfig.jobChargeComment, x);
 
-          // charge account
-          await charge({
-            amount: x.accountPrice,
-            type: misConfig.jobChargeType,
-            comment,
-            target: ua.account.$,
-          }, em, logger, clusterPlugin);
+            if (ua) {
+              // charge account
+              await charge({
+                amount: x.accountPrice,
+                type: misConfig.jobChargeType,
+                comment,
+                target: ua.account.$,
+              }, em, logger, clusterPlugin);
 
-          // charge tenant
-          await charge({
-            amount: x.tenantPrice,
-            type: misConfig.jobChargeType,
-            comment,
-            target: ua.account.$.tenant.getEntity(),
-          }, em, logger, clusterPlugin);
+              // charge tenant
+              await charge({
+                amount: x.tenantPrice,
+                type: misConfig.jobChargeType,
+                comment,
+                target: ua.account.$.tenant.getEntity(),
+              }, em, logger, clusterPlugin);
 
-          await ua.addJobCharge(x.tenantPrice, clusterPlugin, logger);
-
-        }));
+              await addJobCharge(ua, x.tenantPrice, clusterPlugin, logger);
+            }
+          }));
 
         logger.info(`Round ${i + 1}/${loopCount} completed and persisted. Wait 2 seconds for next round.`);
       });

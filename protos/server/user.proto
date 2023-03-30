@@ -1,3 +1,15 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 syntax = "proto3";
 
 package scow.server;
@@ -23,7 +35,7 @@ message AccountStatus {
   common.Money balance = 5;
 }
 
-message GetUserStatusReply {
+message GetUserStatusResponse {
   // account and its status
   map<string, AccountStatus> account_statuses = 1;
   // cluster and quota
@@ -36,7 +48,9 @@ message QueryUsedStorageQuotaRequest {
   string cluster = 3;
 }
 
-message QueryUsedStorageQuotaReply { uint64 used = 1; }
+message QueryUsedStorageQuotaResponse {
+  uint64 used = 1;
+}
 
 message GetAccountUsersRequest {
   string tenant_name = 1;
@@ -54,7 +68,9 @@ message AccountUserInfo {
   optional common.Money used_job_charge_limit = 7;
 }
 
-message GetAccountUsersReply { repeated AccountUserInfo results = 1; }
+message GetAccountUsersResponse {
+  repeated AccountUserInfo results = 1;
+}
 
 message QueryIsUserInAccountRequest {
   string tenant_name = 1;
@@ -62,7 +78,9 @@ message QueryIsUserInAccountRequest {
   string account_name = 3;
 }
 
-message QueryIsUserInAccountReply { bool result = 1; }
+message QueryIsUserInAccountResponse {
+  bool result = 1;
+}
 
 message UnblockUserInAccountRequest {
   string tenant_name = 1;
@@ -72,7 +90,8 @@ message UnblockUserInAccountRequest {
 
 // NOT_FOUND: user_id or account_name is not found.
 // FAILED_PRECONDITION: user is already unblocked
-message UnblockUserInAccountReply {}
+message UnblockUserInAccountResponse {
+}
 
 message BlockUserInAccountRequest {
   string tenant_name = 1;
@@ -82,7 +101,8 @@ message BlockUserInAccountRequest {
 
 // NOT_FOUND: user_id or account_name is not found.
 // FAILED_PRECONDITION: user is already blocked
-message BlockUserInAccountReply {}
+message BlockUserInAccountResponse {
+}
 
 message RemoveUserFromAccountRequest {
   string tenant_name = 1;
@@ -92,7 +112,8 @@ message RemoveUserFromAccountRequest {
 
 // NOT_FOUND: user_id is not found.
 // OUT_OF_RANGE: user is the owner of the account
-message RemoveUserFromAccountReply {}
+message RemoveUserFromAccountResponse {
+}
 
 message AddUserToAccountRequest {
   string tenant_name = 1;
@@ -102,7 +123,8 @@ message AddUserToAccountRequest {
 
 // ALREADY_EXISTS: user already in the account
 // NOT_FOUND: account is not found.
-message AddUserToAccountReply {}
+message AddUserToAccountResponse {
+}
 
 message SetAsAdminRequest {
   string tenant_name = 1;
@@ -112,7 +134,8 @@ message SetAsAdminRequest {
 
 // FAILED_PRECONDITION: the user is already admin
 // NOT_FOUND: user is not found.
-message SetAsAdminReply {}
+message SetAsAdminResponse {
+}
 
 message UnsetAdminRequest {
   string tenant_name = 1;
@@ -122,7 +145,8 @@ message UnsetAdminRequest {
 
 // FAILED_PRECONDITION: the user is already not admin
 // NOT_FOUND: user is not found.
-message UnsetAdminReply {}
+message UnsetAdminResponse {
+}
 
 message CreateUserRequest {
   string tenant_name = 1;
@@ -133,10 +157,11 @@ message CreateUserRequest {
 }
 
 // ALREADY_EXISTS: user with id already exists
-message CreateUserReply {
+message CreateUserResponse {
   // The id of the new user
   // Must be monotonically increasing
   uint32 id = 1;
+  bool created_in_auth = 2;
 }
 
 message DeleteUserRequest {
@@ -146,7 +171,8 @@ message DeleteUserRequest {
 
 // FAILED_PRECONDITION: the user is an owner of an account.
 // NOT_FOUND: user is not found
-message DeleteUserReply {}
+message DeleteUserResponse {
+}
 
 message GetNameRequest {
   string tenant_name = 1;
@@ -154,9 +180,13 @@ message GetNameRequest {
 }
 
 // NOT_FOUND: user is not found
-message GetNameReply { string name = 1; }
+message GetNameResponse {
+  string name = 1;
+}
 
-message GetUsersRequest { string tenant_name = 1; }
+message GetUsersRequest {
+  string tenant_name = 1;
+}
 
 message User {
   string tenant_name = 1;
@@ -169,7 +199,9 @@ message User {
   repeated TenantRole tenant_roles = 8;
 }
 
-message GetUserInfoRequest { string user_id = 1; }
+message GetUserInfoRequest {
+  string user_id = 1;
+}
 
 enum UserRole {
   USER = 0;
@@ -192,7 +224,7 @@ enum TenantRole {
   TENANT_FINANCE = 1;
 }
 
-message GetUserInfoReply {
+message GetUserInfoResponse {
   repeated AccountAffiliation affiliations = 1;
   repeated PlatformRole platform_roles = 2;
   repeated TenantRole tenant_roles = 3;
@@ -200,30 +232,98 @@ message GetUserInfoReply {
   string tenant_name = 5;
 }
 
-message GetUsersReply { repeated User users = 1; }
+message GetUsersResponse {
+  repeated User users = 1;
+}
+
+message PlatformUserInfo {
+  string user_id = 1;
+  string name = 2;
+  repeated string available_accounts = 3;
+  string tenant_name = 4;
+  google.protobuf.Timestamp create_time = 5;
+  repeated PlatformRole platform_roles = 6;
+}
+
+message GetAllUsersRequest {
+  uint32 page = 1;
+  optional uint64 page_size = 2;
+  optional string id_or_name = 3;
+}
+
+message GetAllUsersResponse {
+  uint64 total_count = 1;
+  repeated PlatformUserInfo platform_users = 2;
+}
+
+message SetPlatformRoleRequest {
+  string user_id = 1;
+  PlatformRole role_type = 2;
+}
+
+// FAILED_PRECONDITION: the user is already this role(role_type)
+// NOT_FOUND: user is not found.
+message SetPlatformRoleResponse {
+}
+
+message UnsetPlatformRoleRequest {
+  string user_id = 1;
+  PlatformRole role_type = 2;
+}
+
+// FAILED_PRECONDITION: the user is already not this role(role_type)
+// NOT_FOUND: user is not found.
+message UnsetPlatformRoleResponse {
+}
+
+message SetTenantRoleRequest {
+  string user_id = 1;
+  TenantRole role_type = 2;
+}
+
+// FAILED_PRECONDITION: the user is already this role(role_type)
+// NOT_FOUND: user is not found.
+message SetTenantRoleResponse {
+}
+
+message UnsetTenantRoleRequest {
+  string user_id = 1;
+  TenantRole role_type = 2;
+}
+
+// FAILED_PRECONDITION: the user is already not this role(role_type)
+// NOT_FOUND: user is not found.
+message UnsetTenantRoleResponse {
+}
 
 service UserService {
 
-  rpc GetUsers(GetUsersRequest) returns (GetUsersReply);
+  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse);
 
-  rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoReply);
+  rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse);
 
-  rpc GetAccountUsers(GetAccountUsersRequest) returns (GetAccountUsersReply);
+  rpc GetAllUsers(GetAllUsersRequest) returns (GetAllUsersResponse);
+
+  rpc GetAccountUsers(GetAccountUsersRequest) returns (GetAccountUsersResponse);
   rpc QueryIsUserInAccount(QueryIsUserInAccountRequest)
-      returns (QueryIsUserInAccountReply);
-  rpc GetUserStatus(GetUserStatusRequest) returns (GetUserStatusReply);
+      returns (QueryIsUserInAccountResponse);
+  rpc GetUserStatus(GetUserStatusRequest) returns (GetUserStatusResponse);
   rpc QueryUsedStorageQuota(QueryUsedStorageQuotaRequest)
-      returns (QueryUsedStorageQuotaReply);
-  rpc CreateUser(CreateUserRequest) returns (CreateUserReply);
-  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply);
-  rpc AddUserToAccount(AddUserToAccountRequest) returns (AddUserToAccountReply);
+      returns (QueryUsedStorageQuotaResponse);
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  rpc AddUserToAccount(AddUserToAccountRequest) returns (AddUserToAccountResponse);
   rpc RemoveUserFromAccount(RemoveUserFromAccountRequest)
-      returns (RemoveUserFromAccountReply);
+      returns (RemoveUserFromAccountResponse);
   rpc BlockUserInAccount(BlockUserInAccountRequest)
-      returns (BlockUserInAccountReply);
+      returns (BlockUserInAccountResponse);
   rpc UnblockUserInAccount(UnblockUserInAccountRequest)
-      returns (UnblockUserInAccountReply);
-  rpc SetAsAdmin(SetAsAdminRequest) returns (SetAsAdminReply);
-  rpc UnsetAdmin(UnsetAdminRequest) returns (UnsetAdminReply);
-  rpc GetName(GetNameRequest) returns (GetNameReply);
+      returns (UnblockUserInAccountResponse);
+  rpc SetAsAdmin(SetAsAdminRequest) returns (SetAsAdminResponse);
+  rpc UnsetAdmin(UnsetAdminRequest) returns (UnsetAdminResponse);
+  rpc GetName(GetNameRequest) returns (GetNameResponse);
+  rpc SetPlatformRole(SetPlatformRoleRequest) returns (SetPlatformRoleResponse);
+  rpc UnsetPlatformRole(UnsetPlatformRoleRequest) returns (UnsetPlatformRoleResponse);
+  rpc SetTenantRole(SetTenantRoleRequest) returns (SetTenantRoleResponse);
+  rpc UnsetTenantRole(UnsetTenantRoleRequest) returns (UnsetTenantRoleResponse);
 }

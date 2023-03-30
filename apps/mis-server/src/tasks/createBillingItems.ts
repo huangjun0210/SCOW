@@ -1,6 +1,19 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Logger } from "@ddadaal/tsgrpc-server";
 import { SqlEntityManager } from "@mikro-orm/mysql";
-import { getConfigFromFile } from "@scow/config";
+import { DEFAULT_CONFIG_BASE_PATH } from "@scow/config/build/constants";
+import { getConfigFromFile } from "@scow/lib-config";
 import { Decimal } from "@scow/lib-decimal";
 import { Static, Type } from "@sinclair/typebox";
 import { AmountStrategy, JobPriceItem } from "src/entities/JobPriceItem";
@@ -29,7 +42,7 @@ const PriceItemsJsonSchema = Type.Record(
 
 export async function createPriceItems(em: SqlEntityManager, logger: Logger) {
 
-  const priceItems = getConfigFromFile(PriceItemsJsonSchema, "priceItems");
+  const priceItems = getConfigFromFile(PriceItemsJsonSchema, "priceItems", DEFAULT_CONFIG_BASE_PATH);
 
   logger.info("priceItems.json content: %o", priceItems);
 

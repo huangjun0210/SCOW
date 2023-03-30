@@ -1,8 +1,21 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { asyncUnaryCall } from "@ddadaal/tsgrpc-client";
+import { DesktopServiceClient } from "@scow/protos/build/portal/desktop";
 import { authenticate } from "src/auth/server";
+import { getClient } from "src/utils/client";
 import { publicConfig } from "src/utils/config";
 import { route } from "src/utils/route";
-import { getClusterLoginNode, loggedExec, sshConnect } from "src/utils/ssh";
-import { VNCSERVER_BIN_PATH } from "src/utils/turbovnc";
 
 export interface KillDesktopSchema {
   method: "POST";
@@ -23,8 +36,6 @@ const auth = authenticate(() => true);
 
 export default /* #__PURE__*/route<KillDesktopSchema>("KillDesktopSchema", async (req, res) => {
 
-
-
   if (!publicConfig.ENABLE_LOGIN_DESKTOP) {
     return { 501: null };
   }
@@ -35,16 +46,10 @@ export default /* #__PURE__*/route<KillDesktopSchema>("KillDesktopSchema", async
 
   const { cluster, displayId } = req.body;
 
-  const host = getClusterLoginNode(cluster);
+  const client = getClient(DesktopServiceClient);
 
-  if (!host) { return { 400: { code: "INVALID_CLUSTER" } }; }
-
-  return await sshConnect(host, info.identityId, req.log, async (ssh) => {
-
-    // kill specific desktop
-    await loggedExec(ssh, req.log, true, VNCSERVER_BIN_PATH, ["-kill", ":" + displayId]);
-
-    return { 204: null };
-  });
+  return await asyncUnaryCall(client, "killDesktop", {
+    cluster, displayId, userId: info.identityId,
+  }).then(() => ({ 204: null }));
 
 });

@@ -1,5 +1,17 @@
-import type { ClusterTextsConfigSchema } from "@scow/config/build/appConfig/clusterTexts";
-import { Divider } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import type { ClusterTextsConfigSchema } from "@scow/config/build/clusterTexts";
+import { Divider, Typography } from "antd";
 import { GetServerSideProps, NextPage } from "next";
 import { checkCookie } from "src/auth/server";
 import { JobBillingTable, JobBillingTableItem } from "src/components/JobBillingTable";
@@ -16,13 +28,13 @@ interface Props {
   text: ValueOf<ClusterTextsConfigSchema> | undefined;
 }
 
-const ClusterCommentTitle = styled.h2`
+const ClusterCommentTitle = styled(Typography.Title)`
   padding-top: 8px;
   font-weight: 600;
   font-size: 16px;
 `;
 
-const ContentContainer = styled.p`
+const ContentContainer = styled(Typography.Paragraph)`
   white-space: pre-line;
 `;
 
@@ -36,7 +48,7 @@ export const PartitionsPage: NextPage<Props> = ({ items, text }) => {
       {
         text?.clusterComment ? (
           <div>
-            <ClusterCommentTitle>说明</ClusterCommentTitle>
+            <ClusterCommentTitle level={2}>说明</ClusterCommentTitle>
             <ContentContainer>{text.clusterComment}</ContentContainer>
           </div>
         ) : undefined

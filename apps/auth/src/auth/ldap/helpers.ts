@@ -1,28 +1,47 @@
-import { FastifyLoggerInstance } from "fastify";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { FastifyBaseLogger } from "fastify";
 import ldapjs from "ldapjs";
 import { LdapConfigSchema } from "src/config/auth";
 import { promisify } from "util";
 
 export const useLdap = (
-  logger: FastifyLoggerInstance,
-  config: LdapConfigSchema,
+  logger: FastifyBaseLogger,
+  config: Pick<LdapConfigSchema, "bindDN" | "bindPassword" | "url">,
   user: { dn: string, password: string } = { dn: config.bindDN, password: config.bindPassword },
 ) => {
 
   return async <T>(consume: (client: ldapjs.Client) => Promise<T>): Promise<T> => {
     const client = ldapjs.createClient(({ url: config.url, log: logger }));
 
-    await promisify(client.bind.bind(client))(user.dn, user.password);
-
-    return await consume(client).finally(() => {
-      client.destroy();
-      logger.info("Disconnected LDAP connection.");
+    client.on("error", (err) => {
+      logger.error(err, "LDAP Error occurred.");
     });
+
+    const unbind = async () => {
+      await promisify(client.unbind.bind(client))();
+      logger.info("Disconnected LDAP connection.");
+    };
+
+    return await (async () => {
+      await promisify(client.bind.bind(client))(user.dn, user.password);
+      return await consume(client);
+    })().finally(unbind);
   };
 };
 
 export const searchOne = async <T>(
-  logger: FastifyLoggerInstance,
+  logger: FastifyBaseLogger,
   client: ldapjs.Client,
   searchBase: string,
   searchOptions: ldapjs.SearchOptions,
@@ -38,17 +57,22 @@ export const searchOne = async <T>(
       let found = false;
 
       res.on("searchEntry", (entry) => {
-        if (found) { return; }
+        if (found) {
+          logger.info("An entry has already be found. Ignoring more entities.");
+          return;
+        }
+
         logger.info("Get an entry. %o", entry);
 
         const val = furtherCheck(entry);
 
-        if (!val) { return; }
+        if (!val) {
+          logger.info("Entity %o failed to pass further check");
+          return;
+        }
 
         found = true;
         logger.info("Get an entry with valid info. dn: %s.", entry.dn);
-        res.removeAllListeners();
-        res.emit("end");
         resolve({ ...val, dn: entry.dn });
       });
 
@@ -73,7 +97,7 @@ export const searchOne = async <T>(
   });
 };
 
-export const findUser = async (logger: FastifyLoggerInstance,
+export const findUser = async (logger: FastifyBaseLogger,
   config: LdapConfigSchema, client: ldapjs.Client, id: string) => {
   return await searchOne(logger, client, config.searchBase,
     {
@@ -86,22 +110,30 @@ export const findUser = async (logger: FastifyLoggerInstance,
             value: id,
           })],
       }),
-    }, (e) => extractUserInfoFromEntry(config, e),
+    }, (e) => extractUserInfoFromEntry(config, e, logger),
   );
 };
 
-export const extractUserInfoFromEntry = (config: LdapConfigSchema, entry: ldapjs.SearchEntry) => {
-  const identityId = takeOne(entry.attributes.find((x) => x.json.type === config.attrs.uid)?.vals);
-  const name = takeOne(entry.attributes.find((x) => x.json.type === config.attrs.name)?.vals);
-
-  if (!identityId || !name) {
-    return undefined;
-  } else {
-    return { identityId, name };
-  }
+export const extractAttr = (entry: ldapjs.SearchEntry, attr: string): string[] | undefined => {
+  return entry.attributes.find((x) => x.json.type === attr)?.vals as string[] | undefined;
 };
 
-function takeOne(val: string | string[] | undefined) {
+export const extractUserInfoFromEntry = (
+  config: LdapConfigSchema, entry: ldapjs.SearchEntry, log: FastifyBaseLogger,
+) => {
+  const identityId = takeOne(extractAttr(entry, config.attrs.uid));
+
+  if (!identityId) {
+    log.info("Candidate user (dn %s) doesn't has property key %s (set by ldap.attrs.uid). Ignored.");
+    return undefined;
+  }
+
+  const name = config.attrs.name ? takeOne(extractAttr(entry, config.attrs.name)) : identityId;
+
+  return { identityId, name };
+};
+
+export function takeOne(val: string | string[] | undefined) {
   if (typeof val === "string") {
     return val;
   }

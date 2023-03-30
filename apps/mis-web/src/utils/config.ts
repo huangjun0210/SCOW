@@ -1,13 +1,25 @@
-import type { ClusterConfigSchema } from "@scow/config/build/appConfig/cluster";
-import { CONFIG_BASE_PATH } from "@scow/config/build/constants";
-import type { ClusterTextsConfigSchema } from "@scow/config/src/appConfig/clusterTexts";
-import type { UiConfigSchema } from "@scow/config/src/appConfig/ui";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import type { ClusterConfigSchema } from "@scow/config/build/cluster";
+import type { ClusterTextsConfigSchema } from "@scow/config/build/clusterTexts";
+import type { UiConfigSchema } from "@scow/config/build/ui";
 import getConfig from "next/config";
 
 export interface ServerRuntimeConfig {
-  SERVER_URL: string;
-  BASE_PATH: string;
+  AUTH_EXTERNAL_URL: string;
   AUTH_INTERNAL_URL: string;
+
+  SERVER_URL: string;
 
   UI_CONFIG: UiConfigSchema | undefined;
   DEFAULT_PRIMARY_COLOR: string;
@@ -17,6 +29,7 @@ export interface ServerRuntimeConfig {
 }
 
 export interface PublicRuntimeConfig {
+  BASE_PATH: string;
   CLUSTERS: { [clusterId: string]: Cluster };
   PREDEFINED_CHARGING_TYPES: string[];
   ENABLE_CREATE_USER: boolean;
@@ -24,6 +37,12 @@ export interface PublicRuntimeConfig {
 
   ACCOUNT_NAME_PATTERN: string | undefined;
   ACCOUNT_NAME_PATTERN_MESSAGE: string | undefined;
+
+  USERID_PATTERN: string | undefined;
+  USERID_PATTERN_MESSAGE: string | undefined;
+
+  PASSWORD_PATTERN: string | undefined;
+  PASSWORD_PATTERN_MESSAGE: string | undefined;
 
   PORTAL_URL: string | undefined;
 }
@@ -33,4 +52,3 @@ export const publicConfig: PublicRuntimeConfig = getConfig().publicRuntimeConfig
 
 export type Cluster = { id: string; name: string; }
 
-export const CONFIG_PATH = process.env.NODE_ENV === "production" ? CONFIG_BASE_PATH : "config";

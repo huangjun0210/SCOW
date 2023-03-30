@@ -1,7 +1,18 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
 
 import { numberToMoney } from "@scow/lib-decimal";
-import { Form, Input, InputNumber, message, Modal, Select, Space, Table } from "antd";
-import { ColumnsType } from "antd/lib/table";
+import { App, Form, Input, InputNumber, Modal, Select, Space, Table } from "antd";
+import { ColumnsType } from "antd/es/table";
 import { useState } from "react";
 import { api } from "src/apis";
 import { JobBillingTableItem } from "src/components/JobBillingTable";
@@ -47,8 +58,11 @@ const columns: ColumnsType<JobBillingTableItem> = [
 const EditPriceModal: React.FC<CommonModalProps & {
   current: JobBillingTableItem["priceItem"]; path: string; tenant?: string; reload: () => void
 }> = ({
-  current, onClose, path, visible, tenant, reload,
+  current, onClose, path, open, tenant, reload,
 }) => {
+
+
+  const { message } = App.useApp();
 
   const [form] = Form.useForm<{ price: number; itemId: string; amount: string; description: string }>();
   const [loading, setLoading] = useState(false);
@@ -71,13 +85,15 @@ const EditPriceModal: React.FC<CommonModalProps & {
   };
 
   return (
-    <Modal title="编辑作业价格项" visible={visible} onCancel={onClose} onOk={onOk} destroyOnClose confirmLoading={loading}>
-      <Form form={form} initialValues={{
-        itemId: current?.itemId,
-        amount: current?.amount ?? AmountStrategy.CPUS_ALLOC,
-        price: current?.price ?? 0,
-        description: "",
-      }}
+    <Modal title="编辑作业价格项" open={open} onCancel={onClose} onOk={onOk} destroyOnClose confirmLoading={loading}>
+      <Form
+        form={form}
+        initialValues={{
+          itemId: current?.itemId,
+          amount: current?.amount ?? AmountStrategy.CPUS_ALLOC,
+          price: current?.price ?? 0,
+          description: "",
+        }}
       >
         <Form.Item label="租户">
           <strong>{tenant ?? "默认价格项"}</strong>
@@ -114,7 +130,8 @@ interface Props {
 export const EditableJobBillingTable: React.FC<Props> = ({ data, loading, tenant, reload }) => {
   return (
     <Table
-      dataSource={data} columns={[
+      dataSource={data}
+      columns={[
         ...columns,
         { dataIndex: "price", title: "设置", key: "index", render: (_, r) => {
           return {
@@ -128,8 +145,10 @@ export const EditableJobBillingTable: React.FC<Props> = ({ data, loading, tenant
           };
         } },
       ]}
-      scroll={{ x: 800 }} size="middle"
-      bordered pagination={false}
+      scroll={{ x: 800 }}
+      size="middle"
+      bordered
+      pagination={false}
       loading={loading}
     />
   );

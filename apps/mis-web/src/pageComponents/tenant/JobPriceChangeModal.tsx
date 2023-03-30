@@ -1,10 +1,22 @@
-import { Form, Input, InputNumber, message, Modal } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { App, Form, Input, InputNumber, Modal } from "antd";
 import { useState } from "react";
 import { api } from "src/apis";
 import type { GetJobFilter } from "src/pages/api/job/jobInfo";
 
 interface Props {
-  visible: boolean;
+  open: boolean;
   onClose: () => void;
   jobCount: number;
   filter: GetJobFilter;
@@ -22,13 +34,15 @@ const text = {
   "tenant": "平台计费",
 };
 
-export const JobPriceChangeModal: React.FC<Props> = ({ visible, onClose, jobCount, filter, target, reload }) => {
+export const JobPriceChangeModal: React.FC<Props> = ({ open, onClose, jobCount, filter, target, reload }) => {
   const [form] = Form.useForm<FormProps>();
   const [loading, setLoading] = useState(false);
 
+  const { message } = App.useApp();
+
   return (
     <Modal
-      visible={visible}
+      open={open}
       title={`修改作业${text[target]}`}
       okText={`修改${text[target]}`}
       cancelText="取消"

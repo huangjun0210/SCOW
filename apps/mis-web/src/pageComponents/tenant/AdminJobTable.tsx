@@ -1,19 +1,31 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { defaultPresets, formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { Money } from "@scow/protos/build/common/money";
+import { JobInfo } from "@scow/protos/build/server/job";
 import { Button, DatePicker, Divider, Form, Input, InputNumber, Space, Table } from "antd";
-import moment from "moment";
+import dayjs from "dayjs";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useAsync } from "react-async";
 import { api } from "src/apis";
 import { ClusterSelector } from "src/components/ClusterSelector";
 import { FilterFormContainer, FilterFormTabs } from "src/components/FilterFormContainer";
 import { TableTitle } from "src/components/TableTitle";
-import { Money } from "src/generated/common/money";
-import { JobInfo } from "src/generated/server/job";
 import { HistoryJobDrawer } from "src/pageComponents/job/HistoryJobDrawer";
 import { JobPriceChangeModal } from "src/pageComponents/tenant/JobPriceChangeModal";
 import type { GetJobFilter, GetJobInfoSchema } from "src/pages/api/job/jobInfo";
 import type { Cluster } from "src/utils/config";
 import { publicConfig } from "src/utils/config";
-import { defaultRanges, formatDateTime } from "src/utils/datetime";
 import { moneyToString, nullableMoneyToString } from "src/utils/money";
 
 interface PageInfo {
@@ -22,7 +34,7 @@ interface PageInfo {
 }
 
 interface FilterForm {
-  jobEndTime: [moment.Moment, moment.Moment];
+  jobEndTime: [dayjs.Dayjs, dayjs.Dayjs];
   jobId: number | undefined;
   accountName: string;
   userId: string;
@@ -49,7 +61,7 @@ export const AdminJobTable: React.FC<Props> = () => {
   const rangeSearch = useRef(true);
 
   const [query, setQuery] = useState<FilterForm>(() => {
-    const now = moment();
+    const now = dayjs();
     return {
       jobId: undefined,
       userId: "",
@@ -76,49 +88,51 @@ export const AdminJobTable: React.FC<Props> = () => {
     <div>
       <FilterFormContainer>
         <Form<FilterForm>
-          form={form} initialValues={query}
+          form={form}
+          initialValues={query}
           onFinish={async () => {
             setQuery(await form.validateFields());
           }}
         >
-          <FilterFormTabs button={(
-            <Form.Item>
-              <Button type="primary" htmlType="submit">搜索</Button>
-            </Form.Item>
-          )}
-          onChange={(a) => rangeSearch.current = a === "range"}
-          tabs={[
-            {
-              title: "批量搜索", key: "range", node: (
-                <>
-                  <Form.Item label="集群" name="clusters">
-                    <ClusterSelector />
-                  </Form.Item>
-                  <Form.Item label="用户ID" name="userId">
-                    <Input />
-                  </Form.Item>
-                  <Form.Item label="账户" name="accountName">
-                    <Input />
-                  </Form.Item>
-                  <Form.Item label="作业结束时间" name="jobEndTime">
-                    <DatePicker.RangePicker showTime allowClear={false} ranges={defaultRanges()}/>
-                  </Form.Item>
-                </>
-              ),
-            },
-            {
-              title: "精确搜索", key: "precision", node: (
-                <>
-                  <Form.Item label="集群" name="clusters">
-                    <ClusterSelector />
-                  </Form.Item>
-                  <Form.Item label="集群作业ID" name="jobId">
-                    <InputNumber min={1} style={{ minWidth: "160px" }} />
-                  </Form.Item>
-                </>
-              ),
-            },
-          ]}
+          <FilterFormTabs
+            button={(
+              <Form.Item>
+                <Button type="primary" htmlType="submit">搜索</Button>
+              </Form.Item>
+            )}
+            onChange={(a) => rangeSearch.current = a === "range"}
+            tabs={[
+              {
+                title: "批量搜索", key: "range", node: (
+                  <>
+                    <Form.Item label="集群" name="clusters">
+                      <ClusterSelector />
+                    </Form.Item>
+                    <Form.Item label="用户ID" name="userId">
+                      <Input />
+                    </Form.Item>
+                    <Form.Item label="账户" name="accountName">
+                      <Input />
+                    </Form.Item>
+                    <Form.Item label="作业结束时间" name="jobEndTime">
+                      <DatePicker.RangePicker showTime allowClear={false} presets={defaultPresets} />
+                    </Form.Item>
+                  </>
+                ),
+              },
+              {
+                title: "精确搜索", key: "precision", node: (
+                  <>
+                    <Form.Item label="集群" name="clusters">
+                      <ClusterSelector />
+                    </Form.Item>
+                    <Form.Item label="集群作业ID" name="jobId">
+                      <InputNumber min={1} style={{ minWidth: "160px" }} />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
           />
         </Form>
       </FilterFormContainer>
@@ -146,18 +160,18 @@ const ChangePriceButton: React.FC<{
   reload: () => void;
 }> = ({ filter, count, target, reload }) => {
 
-  const [visible, setVisible] = useState(false);
+  const [open, setOpen] = useState(false);
 
   return (
     <>
-      <Button onClick={() => setVisible(true)}>
+      <Button onClick={() => setOpen(true)}>
         调整搜索结果所有作业{target === "account" ? "租户计费" : "平台计费"}
       </Button>
       <JobPriceChangeModal
         target={target}
         reload={reload}
-        onClose={() => setVisible(false)}
-        visible={visible}
+        onClose={() => setOpen(false)}
+        open={open}
         filter={filter}
         jobCount={count}
       />
@@ -236,25 +250,35 @@ const JobInfoTable: React.FC<JobInfoTableProps> = ({
         <Table.Column<JobInfo> dataIndex="partition" title="分区" />
         <Table.Column<JobInfo> dataIndex="qos" title="QOS" />
         <Table.Column<JobInfo> dataIndex="jobName" title="作业名" />
-        <Table.Column<JobInfo> dataIndex="timeSubmit" title="提交时间"
+        <Table.Column<JobInfo>
+          dataIndex="timeSubmit"
+          title="提交时间"
           render={(time: string) => formatDateTime(time)}
         />
-        <Table.Column<JobInfo> dataIndex="timeEnd" title="结束时间"
+        <Table.Column<JobInfo>
+          dataIndex="timeEnd"
+          title="结束时间"
           render={(time: string) => formatDateTime(time)}
         />
-        <Table.Column<JobInfo> dataIndex="accountPrice" title="租户计费"
+        <Table.Column<JobInfo>
+          dataIndex="accountPrice"
+          title="租户计费"
           render={(price: Money) => moneyToString(price)}
         />
-        <Table.Column<JobInfo> dataIndex="tenantPrice" title="平台计费"
+        <Table.Column<JobInfo>
+          dataIndex="tenantPrice"
+          title="平台计费"
           render={(price: Money) => moneyToString(price)}
         />
-        <Table.Column<JobInfo> title="更多"
+        <Table.Column<JobInfo>
+          title="更多"
           render={(_, r) => <a onClick={() => setPreviewItem(r)}>详情</a>}
         />
       </Table>
       <HistoryJobDrawer
-        show={previewItem !== undefined}
-        item={previewItem} onClose={() => setPreviewItem(undefined)}
+        open={previewItem !== undefined}
+        item={previewItem}
+        onClose={() => setPreviewItem(undefined)}
         showedPrices={["account", "tenant"]}
       />
     </>

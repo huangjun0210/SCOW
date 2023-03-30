@@ -1,14 +1,25 @@
-import { parsePlaceholder } from "@scow/config";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { FastifyInstance } from "fastify";
 import ldapjs from "ldapjs";
 import { AuthProvider } from "src/auth/AuthProvider";
+import { createUser } from "src/auth/ldap/createUser";
 import { extractUserInfoFromEntry, findUser, searchOne, useLdap } from "src/auth/ldap/helpers";
-import { modifyPassword, modifyPasswordAsSelf } from "src/auth/ldap/password";
+import { modifyPasswordAsSelf } from "src/auth/ldap/password";
 import { registerPostHandler } from "src/auth/ldap/postHandler";
 import { serveLoginHtml } from "src/auth/loginHtml";
 import { authConfig } from "src/config/auth";
 import { ensureNotUndefined } from "src/utils/validations";
-import { promisify } from "util";
 
 export const createLdapAuthProvider = (f: FastifyInstance) => {
 
@@ -35,7 +46,7 @@ export const createLdapAuthProvider = (f: FastifyInstance) => {
                   }),
                 ],
               }),
-            }, (e) => extractUserInfoFromEntry(ldap, e),
+            }, (e) => extractUserInfoFromEntry(ldap, e, req.log),
           );
 
           if (!user) {
@@ -49,94 +60,11 @@ export const createLdapAuthProvider = (f: FastifyInstance) => {
           return "Match";
         });
       } : undefined,
+    getUser: async (identityId, req) => useLdap(req.log, ldap)(async (client) => (
+      findUser(req.log, ldap, client, identityId)
+    )),
     createUser: async (info, req) => {
-      const id = info.id + ldap.addUser.uidStart;
-
-      await useLdap(req.log, ldap)(async (client) => {
-        const peopleDn = `${ldap.attrs.uid}=${info.identityId},${ldap.addUser.userBase}`;
-        const peopleEntry: Record<string, string | string[] | number> = {
-          [ldap.attrs.uid]: info.identityId,
-          sn: info.identityId,
-          loginShell: "/bin/bash",
-          objectClass: ["inetOrgPerson", "posixAccount", "shadowAccount"],
-          homeDirectory: parsePlaceholder(ldap.addUser.homeDir, { userId: info.identityId }),
-          uidNumber: id,
-          gidNumber: id,
-        };
-
-        if (ldap.attrs.name) {
-          peopleEntry[ldap.attrs.name] = info.name;
-        }
-
-        if (ldap.attrs.mail) {
-          peopleEntry[ldap.attrs.mail] = info.mail;
-        }
-
-        // parse attributes
-        if (ldap.addUser.extraProps) {
-          for (const key in ldap.addUser.extraProps) {
-            const value = ldap.addUser.extraProps[key];
-            if (Array.isArray(value)) {
-              peopleEntry[key] = value.map((x) => parsePlaceholder(x, peopleEntry));
-            } else {
-              peopleEntry[key] = parsePlaceholder(value, peopleEntry);
-            } 
-          }
-        }
-
-        const groupDn = `${ldap.attrs.groupUserId}=${info.identityId},${ldap.addUser.groupBase}`;
-        const groupEntry = {
-          objectClass: ["posixGroup"],
-          memberUid: info.identityId,
-          gidNumber: id,
-        };
-
-        const add = promisify(client.add.bind(client));
-
-        req.log.info("Adding people %s with entry info %o", peopleDn, peopleEntry);
-        await add(peopleDn, peopleEntry);
-
-        req.log.info("Adding group %s with entry info %o", groupDn, groupEntry);
-        await add(groupDn, groupEntry);
-
-        // set password as admin user
-        await modifyPassword(peopleDn, undefined, info.password, client);
-
-        const addUserToGroup = ldap.addUser.userToGroup;
-        if (addUserToGroup) {
-          // get existing members
-          req.log.info("Adding %s to group %s", peopleDn, addUserToGroup);
-
-          const members = await searchOne(req.log, client, addUserToGroup, {
-            attributes: ["member"],
-          }, (entry) => {
-            const member = entry.attributes.find((x) => x.json.type === "member");
-            if (!member) {
-              return undefined;
-            }
-
-            return { members: member.json.vals };
-          });
-
-          if (!members) {
-            req.log.error("Didn't find group %s", addUserToGroup);
-            throw { code: "INTERNAL_ERROR" };
-          }
-
-          // add the dn of the new user to the value
-          const modify = promisify(client.modify.bind(client));
-          await modify(addUserToGroup, new ldapjs.Change({
-            operation: "add",
-            modification: {
-              "member": members.members.concat(peopleDn),
-            },
-          }));
-        }
-
-
-      });
-
-      return "OK";
+      return createUser(info, req, ldap);
     },
     changePassword: async (id, oldPassword, newPassword, req) => {
       return useLdap(req.log, ldap)(async (client) => {

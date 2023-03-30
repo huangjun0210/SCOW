@@ -1,5 +1,12 @@
-redisUrl: localhost:6379
 authType: ldap
+
+redisUrl: localhost:6379
+
+allowedCallbackHostnames:
+  - localhost
+
+captcha:
+  enabled: true
 
 ldap:
   url: ldap://localhost:389
@@ -9,10 +16,20 @@ ldap:
   userFilter: (uid=*)
   addUser:
     userBase: "ou=People,ou=hpc,o=pku"
-    groupBase: "ou=Group,ou=hpc,o=pku"
+    userIdDnKey: cn
+
+    groupStrategy: "newGroupPerUser"
+    newGroupPerUser:
+      groupBase: "ou=Group,ou=hpc,o=pku"
+      groupIdDnKey: cn
+    oneGroupForAllUsers:
+      gidNumber: 1000
+
+    extraProps:
+      # test overriding existing property
+      mail: mail is {{ mail }}
   attrs:
     uid: uid
-    groupUserId: cn
     name: cn
     mail: mail
 

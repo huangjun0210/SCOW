@@ -1,6 +1,19 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { asyncUnaryCall } from "@ddadaal/tsgrpc-client";
+import { JobInfo, JobServiceClient } from "@scow/protos/build/portal/job";
 import { authenticate } from "src/auth/server";
-import { getClusterOps } from "src/clusterops";
-import { JobInfo } from "src/clusterops/api/job";
+import { getClient } from "src/utils/client";
 import { route } from "src/utils/route";
 
 export interface GetAllJobsSchema {
@@ -34,14 +47,11 @@ export default route<GetAllJobsSchema>("GetAllJobsSchema", async (req, res) => {
 
   const { cluster, startTime, endTime } = req.query;
 
-  const clusterops = getClusterOps(cluster);
+  const client = getClient(JobServiceClient);
 
-  const reply = await clusterops.job.getAllJobsInfo({
-    userId: info.identityId,
-    endTime: new Date(endTime),
-    startTime: new Date(startTime),
-  }, req.log);
-
-  return { 200: { results: reply.jobs } };
+  return asyncUnaryCall(client, "listAllJobs", {
+    userId: info.identityId, cluster,
+    startTime, endTime,
+  }).then(({ results }) => ({ 200: { results } }));
 
 });

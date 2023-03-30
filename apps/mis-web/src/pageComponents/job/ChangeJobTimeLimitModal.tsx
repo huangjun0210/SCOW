@@ -1,13 +1,25 @@
-import { Divider, Form, Input, InputNumber, message, Modal, Progress, Select } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { arrayContainsElement } from "@scow/lib-web/build/utils/array";
+import { App, Divider, Form, Input, InputNumber, Modal, Progress, Select } from "antd";
 import { useRef, useState } from "react";
 import { api } from "src/apis";
 import { RunningJobInfo } from "src/models/job";
 import { ChangeStorageMode } from "src/pages/api/admin/changeStorage";
-import { arrayContainsElement } from "src/utils/array";
 import type { Cluster } from "src/utils/config";
 
 interface Props {
-  visible: boolean;
+  open: boolean;
   onClose: () => void;
   reload: () => void;
 
@@ -30,7 +42,10 @@ interface CompletionStatus {
   failed: RunningJobInfo[];
 }
 
-export const ChangeJobTimeLimitModal: React.FC<Props> = ({ visible, onClose, data, reload }) => {
+export const ChangeJobTimeLimitModal: React.FC<Props> = ({ open, onClose, data, reload }) => {
+
+  const { message } = App.useApp();
+
   const [form] = Form.useForm<FormProps>();
   const [loading, setLoading] = useState(false);
 
@@ -51,7 +66,7 @@ export const ChangeJobTimeLimitModal: React.FC<Props> = ({ visible, onClose, dat
 
   return (
     <Modal
-      visible={visible}
+      open={open}
       title="修改作业时限"
       okText="修改"
       cancelText="取消"
@@ -85,7 +100,7 @@ export const ChangeJobTimeLimitModal: React.FC<Props> = ({ visible, onClose, dat
                 reload();
                 close();
               } else {
-                message.warn("部分作业修改时限失败。");
+                message.error("部分作业修改时限失败。");
                 reload();
               }
             }

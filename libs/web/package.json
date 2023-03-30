@@ -1,0 +1,46 @@
+{
+  "name": "@scow/lib-web",
+  "version": "0.2.0",
+  "description": "",
+  "main": "index.js",
+  "private": true,
+  "sideEffects": false,
+  "scripts": {
+    "dev": "tsc -p tsconfig.build.json && (concurrently \"tsc -p tsconfig.build.json -w\" \"tsc-alias -p tsconfig.build.json -w\")",
+    "build": "rimraf build && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json"
+  },
+  "files": [
+    "build",
+    "icons",
+    "!**/*.map"
+  ],
+  "dependencies": {
+    "@scow/utils": "workspace:*",
+    "zod": "3.21.4",
+    "mime-types": "2.1.35"
+  },
+  "peerDependencies": {
+    "antd": "5.3.2",
+    "next": "13.2.4",
+    "styled-components": "5.3.9",
+    "@ant-design/icons": "5.0.1",
+    "dayjs": "1.11.7"
+  },
+  "devDependencies": {
+    "antd": "5.3.2",
+    "next": "13.2.4",
+    "styled-components": "5.3.9",
+    "@types/mime-types": "2.1.1",
+    "react": "18.2.0",
+    "@types/react": "18.0.29",
+    "react-dom": "18.2.0",
+    "@types/react-dom": "18.0.11",
+    "react-is": "18.2.0",
+    "@ant-design/icons": "5.0.1",
+    "dayjs": "1.11.7",
+    "@types/styled-components": "5.1.26"
+  },
+  "author": "PKUHPC (https://github.com/PKUHPC)",
+  "license": "Mulan PSL v2",
+  "repository": "https://github.com/PKUHPC/SCOW"
+}

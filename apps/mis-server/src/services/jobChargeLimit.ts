@@ -1,11 +1,24 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { ensureNotUndefined, plugin } from "@ddadaal/tsgrpc-server";
 import { ServiceError } from "@grpc/grpc-js";
 import { Status } from "@grpc/grpc-js/build/src/constants";
 import { LockMode } from "@mikro-orm/core";
 import { Decimal } from "@scow/lib-decimal";
 import { moneyToNumber } from "@scow/lib-decimal/build/convertion";
+import { JobChargeLimitServiceServer, JobChargeLimitServiceService } from "@scow/protos/build/server/job_charge_limit";
+import { setJobCharge } from "src/bl/charging";
 import { UserAccount } from "src/entities/UserAccount";
-import { JobChargeLimitServiceServer, JobChargeLimitServiceService } from "src/generated/server/jobChargeLimit";
 
 export const jobChargeLimitServer = plugin((server) => {
   server.addService<JobChargeLimitServiceServer>(JobChargeLimitServiceService, {
@@ -21,14 +34,14 @@ export const jobChargeLimitServer = plugin((server) => {
         if (!userAccount) {
           throw <ServiceError>{
             code: Status.NOT_FOUND,
-            details: "User is not found in account.",
+            details: `User ${userId} is not found in account`,
           };
         }
 
         if (!userAccount.jobChargeLimit) {
           throw <ServiceError> {
             code: Status.NOT_FOUND,
-            details: "The user in account has no limit",
+            details: `The user ${userId} in account ${accountName} has no limit`,
           };
         }
 
@@ -61,11 +74,11 @@ export const jobChargeLimitServer = plugin((server) => {
         if (!userAccount) {
           throw <ServiceError>{
             code: Status.NOT_FOUND,
-            details: "User is not found in account.",
+            details: `User ${userId} is not found in account.`,
           };
         }
 
-        await userAccount.setJobCharge(new Decimal(moneyToNumber(limit)), server.ext, logger);
+        await setJobCharge(userAccount, new Decimal(moneyToNumber(limit)), server.ext, logger);
 
         logger.info("Set %s job charge limit to user %s account %s. Current used %s",
           userAccount.jobChargeLimit!.toFixed(2),

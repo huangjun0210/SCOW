@@ -1,9 +1,24 @@
-import { sftpReaddir, sftpStat } from "@scow/lib-ssh";
-import { authenticate } from "src/auth/server";
-import { route } from "src/utils/route";
-import { getClusterLoginNode, sshConnect } from "src/utils/ssh";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
 
-export type FileType = "file" | "dir";
+import { asyncUnaryCall } from "@ddadaal/tsgrpc-client";
+import { status } from "@grpc/grpc-js";
+import { FileInfo_FileType, FileServiceClient } from "@scow/protos/build/portal/file";
+import { authenticate } from "src/auth/server";
+import { getClient } from "src/utils/client";
+import { route } from "src/utils/route";
+import { handlegRPCError } from "src/utils/server";
+
+export type FileType = "FILE" | "DIR";
 
 export type FileInfo = {
   name: string;
@@ -31,8 +46,12 @@ export interface ListFileSchema {
 
 const auth = authenticate(() => true);
 
-export default route<ListFileSchema>("ListFileSchema", async (req, res) => {
+const mapType = {
+  [FileInfo_FileType.DIR]: "DIR",
+  [FileInfo_FileType.FILE]: "FILE",
+} as const;
 
+export default route<ListFileSchema>("ListFileSchema", async (req, res) => {
 
 
   const info = await auth(req, res);
@@ -41,42 +60,17 @@ export default route<ListFileSchema>("ListFileSchema", async (req, res) => {
 
   const { cluster, path } = req.query;
 
-  const host = getClusterLoginNode(cluster);
+  const client = getClient(FileServiceClient);
 
-  if (!host) {
-    return { 400: { code: "INVALID_CLUSTER" } };
-  }
+  return asyncUnaryCall(client, "readDirectory", {
+    cluster, userId: info.identityId, path,
+  }).then(({ results }) => ({ 200: {
+    items: results.map(({ mode, mtime, name, size, type }) => ({
+      mode, mtime, name, size, type: mapType[type],
+    })) } }), handlegRPCError({
+    [status.NOT_FOUND]: () => ({ 400: { code: "INVALID_CLUSTER" as const } }),
+    [status.PERMISSION_DENIED]: () => ({ 403: { code: "NOT_ACCESSIBLE" as const } }),
+    [status.INVALID_ARGUMENT]: () => ({ 412: { code: "DIRECTORY_NOT_FOUND" as const } }),
+  }));
 
-  return await sshConnect(host, info.identityId, req.log, async (ssh) => {
-    const sftp = await ssh.requestSFTP();
-
-    try {
-      const stat = await sftpStat(sftp)(path);
-
-      if (!stat.isDirectory()) {
-        return { 412: { code: "DIRECTORY_NOT_FOUND" } } as const;
-      }
-
-      const files = await sftpReaddir(sftp)(path);
-
-      const list: FileInfo[] = [];
-
-      for (const file of files) {
-
-        const isDir = file.longname.startsWith("d");
-
-        list.push({
-          type: isDir ? "dir" : "file",
-          name: file.filename,
-          mtime: new Date(file.attrs.mtime * 1000).toISOString(),
-          size: file.attrs.size,
-          mode: file.attrs.mode,
-        });
-      }
-      return { 200: { items: list } };
-    } catch {
-      return { 403: { code: "NOT_ACCESSIBLE" } } as const;
-
-    }
-  });
 });

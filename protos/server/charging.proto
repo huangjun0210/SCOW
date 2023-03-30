@@ -1,3 +1,15 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 syntax = "proto3";
 package scow.server;
 
@@ -16,7 +28,7 @@ message PayRequest {
   string ip_address = 7;
 }
 
-message PayReply {
+message PayResponse {
   common.Money previous_balance = 1;
   common.Money current_balance = 2;
 }
@@ -26,7 +38,9 @@ message GetBalanceRequest {
   optional string account_name = 2;
 }
 
-message GetBalanceReply { common.Money balance = 1; }
+message GetBalanceResponse {
+  common.Money balance = 1;
+}
 
 message ChargeRequest {
   string tenant_name = 1;
@@ -37,7 +51,7 @@ message ChargeRequest {
   string comment = 5;
 }
 
-message ChargeReply {
+message ChargeResponse {
   common.Money previous_balance = 1;
   common.Money current_balance = 2;
 }
@@ -62,7 +76,7 @@ message GetChargeRecordsRequest {
   optional string account_name = 4;
 }
 
-message GetChargeRecordsReply {
+message GetChargeRecordsResponse {
   repeated ChargeRecord results = 1;
   optional common.Money total = 2;
 }
@@ -80,8 +94,8 @@ message PaymentRecord {
 }
 
 // If account_name is set, return records of the account, ignoring tenant_name.
-// If account_name is not set and tenant_name is set, return records of the
-// tenant. If none is set, return all
+// If account_name is not set and tenant_name is set, return records of this tenant.
+// If none is set, return records of all tenants.
 message GetPaymentRecordsRequest {
   google.protobuf.Timestamp start_time = 1;
   google.protobuf.Timestamp end_time = 2;
@@ -89,28 +103,31 @@ message GetPaymentRecordsRequest {
   optional string account_name = 4;
 }
 
-message GetPaymentRecordsReply {
+message GetPaymentRecordsResponse {
   repeated PaymentRecord results = 1;
   optional common.Money total = 2;
 }
 
-message GetAllPayTypesRequest {}
+message GetAllPayTypesRequest {
+}
 
-message GetAllPayTypesReply { repeated string types = 1; }
+message GetAllPayTypesResponse {
+  repeated string types = 1;
+}
 
 service ChargingService {
   // NotFound: account is not found.
-  rpc Pay(PayRequest) returns (PayReply);
+  rpc Pay(PayRequest) returns (PayResponse);
 
-  rpc GetAllPayTypes(GetAllPayTypesRequest) returns (GetAllPayTypesReply);
+  rpc GetAllPayTypes(GetAllPayTypesRequest) returns (GetAllPayTypesResponse);
 
   // NotFound: account is not found.
-  rpc Charge(ChargeRequest) returns (ChargeReply);
+  rpc Charge(ChargeRequest) returns (ChargeResponse);
 
   // NotFound: account or tenant is not found.
-  rpc GetBalance(GetBalanceRequest) returns (GetBalanceReply);
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
 
   rpc GetPaymentRecords(GetPaymentRecordsRequest)
-      returns (GetPaymentRecordsReply);
-  rpc GetChargeRecords(GetChargeRecordsRequest) returns (GetChargeRecordsReply);
+      returns (GetPaymentRecordsResponse);
+  rpc GetChargeRecords(GetChargeRecordsRequest) returns (GetChargeRecordsResponse);
 }

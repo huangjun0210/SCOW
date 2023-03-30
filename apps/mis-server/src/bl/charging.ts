@@ -1,10 +1,24 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Logger } from "@ddadaal/tsgrpc-server";
 import { SqlEntityManager } from "@mikro-orm/mysql";
 import { Decimal } from "@scow/lib-decimal";
+import { blockAccount, blockUserInAccount, unblockAccount, unblockUserInAccount } from "src/bl/block";
 import { Account } from "src/entities/Account";
 import { ChargeRecord } from "src/entities/ChargeRecord";
 import { PayRecord } from "src/entities/PayRecord";
 import { Tenant } from "src/entities/Tenant";
+import { UserAccount } from "src/entities/UserAccount";
 import { ClusterPlugin } from "src/plugins/clusters";
 
 interface PayRequest {
@@ -42,7 +56,7 @@ export async function pay(
 
   if (target instanceof Account && prevBalance.lte(0) && target.balance.gt(0)) {
     logger.info("Unblock account %s", target.accountName);
-    await target.unblock(clusterPlugin.clusters, logger);
+    await unblockAccount(target, clusterPlugin.clusters, logger);
   }
 
   return {
@@ -79,11 +93,35 @@ export async function charge(
 
   if (target instanceof Account && prevBalance.gt(0) && target.balance.lte(0)) {
     logger.info("Block account %s due to out of balance.", target.accountName);
-    await target.block(clusterPlugin.clusters, logger);
+    await blockAccount(target, clusterPlugin.clusters, logger);
   }
 
   return {
     currentBalance: target.balance,
     previousBalance: prevBalance,
   };
+}
+
+export async function addJobCharge(ua: UserAccount, charge: Decimal, clusterPlugin: ClusterPlugin, logger: Logger) {
+  if (ua.usedJobCharge && ua.jobChargeLimit) {
+    ua.usedJobCharge = ua.usedJobCharge.plus(charge);
+    if (ua.usedJobCharge.gt(ua.jobChargeLimit)) {
+      await blockUserInAccount(ua, clusterPlugin, logger);
+    } else {
+      await unblockUserInAccount(ua, clusterPlugin, logger);
+    }
+  }
+}
+
+export async function setJobCharge(ua: UserAccount, charge: Decimal, clusterPlugin: ClusterPlugin, logger: Logger) {
+  ua.jobChargeLimit = charge;
+  if (!ua.usedJobCharge) {
+    ua.usedJobCharge = new Decimal(0);
+  } else {
+    if (ua.jobChargeLimit.lt(ua.usedJobCharge)) {
+      await blockUserInAccount(ua, clusterPlugin, logger);
+    } else {
+      await unblockUserInAccount(ua, clusterPlugin, logger);
+    }
+  }
 }

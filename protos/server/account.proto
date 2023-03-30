@@ -1,3 +1,15 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 syntax = "proto3";
 
 package scow.server;
@@ -11,7 +23,7 @@ message BlockAccountRequest {
 }
 
 // NOT_FOUND: account is not found.
-message BlockAccountReply {
+message BlockAccountResponse {
   enum Result {
     OK = 0;
     ALREADY_BLOCKED = 1;
@@ -26,9 +38,13 @@ message UnblockAccountRequest {
 }
 
 // NOT_FOUND: account is not found.
-message UnblockAccountReply { bool executed = 1; }
+message UnblockAccountResponse {
+  bool executed = 1;
+}
 
-message GetWhitelistedAccountsRequest { string tenant_name = 1; }
+message GetWhitelistedAccountsRequest {
+  string tenant_name = 1;
+}
 
 message WhitelistedAccount {
   string account_name = 1;
@@ -39,7 +55,7 @@ message WhitelistedAccount {
   string comment = 6;
 }
 
-message GetWhitelistedAccountsReply {
+message GetWhitelistedAccountsResponse {
   repeated WhitelistedAccount accounts = 1;
 }
 
@@ -51,7 +67,9 @@ message WhitelistAccountRequest {
 }
 
 // NOT_FOUND: account is not found.
-message WhitelistAccountReply { bool executed = 1; }
+message WhitelistAccountResponse {
+  bool executed = 1;
+}
 
 message DewhitelistAccountRequest {
   string tenant_name = 1;
@@ -59,7 +77,9 @@ message DewhitelistAccountRequest {
 }
 
 // NOT_FOUND: account is not found.
-message DewhitelistAccountReply { bool executed = 1; }
+message DewhitelistAccountResponse {
+  bool executed = 1;
+}
 
 message CreateAccountRequest {
   string tenant_name = 1;
@@ -70,7 +90,8 @@ message CreateAccountRequest {
 
 // ALREADY_EXISTS: Account already exists.
 // NOT_FOUND: owner user doesn't exist
-message CreateAccountReply {}
+message CreateAccountResponse {
+}
 
 message GetAccountsRequest {
   string tenant_name = 1;
@@ -89,19 +110,21 @@ message Account {
   common.Money balance = 8;
 }
 
-message GetAccountsReply { repeated Account results = 1; }
+message GetAccountsResponse {
+  repeated Account results = 1;
+}
 
 service AccountService {
 
-  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountReply);
-  rpc GetAccounts(GetAccountsRequest) returns (GetAccountsReply);
+  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse);
+  rpc GetAccounts(GetAccountsRequest) returns (GetAccountsResponse);
 
-  rpc BlockAccount(BlockAccountRequest) returns (BlockAccountReply);
-  rpc UnblockAccount(UnblockAccountRequest) returns (UnblockAccountReply);
+  rpc BlockAccount(BlockAccountRequest) returns (BlockAccountResponse);
+  rpc UnblockAccount(UnblockAccountRequest) returns (UnblockAccountResponse);
 
   rpc GetWhitelistedAccounts(GetWhitelistedAccountsRequest)
-      returns (GetWhitelistedAccountsReply);
-  rpc WhitelistAccount(WhitelistAccountRequest) returns (WhitelistAccountReply);
+      returns (GetWhitelistedAccountsResponse);
+  rpc WhitelistAccount(WhitelistAccountRequest) returns (WhitelistAccountResponse);
   rpc DewhitelistAccount(DewhitelistAccountRequest)
-      returns (DewhitelistAccountReply);
+      returns (DewhitelistAccountResponse);
 }

@@ -1,8 +1,22 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /* eslint-disable max-len */
 import { Server } from "@ddadaal/tsgrpc-server";
 import { MySqlDriver, SqlEntityManager } from "@mikro-orm/mysql";
 import { Decimal } from "@scow/lib-decimal";
 import { createServer } from "src/app";
+import { setJobCharge } from "src/bl/charging";
+import { clusterNameToScowClusterId } from "src/config/clusters";
 import { JobInfo } from "src/entities/JobInfo";
 import { OriginalJob } from "src/entities/OriginalJob";
 import { UserStatus } from "src/entities/UserAccount";
@@ -32,7 +46,7 @@ beforeEach(async () => {
 
   // insert raw job table info data
   jobTableOrm = await createSourceDbOrm(server.logger);
-  const jobsData = testData.map(({ tenantPrice, accountPrice, ...rest }) => {
+  const jobsData = testData.map(({ tenantPrice, accountPrice, tenant, ...rest }) => {
     const job = new OriginalJob();
     Object.assign(job, rest);
     return job;
@@ -54,7 +68,7 @@ it("fetches the data", async () => {
 
   // set job charge limit of user b in account b
 
-  await data.uaBB.setJobCharge(new Decimal(0.01), server.ext, server.logger);
+  await setJobCharge(data.uaBB, new Decimal(0.01), server.ext, server.logger);
   await initialEm.flush();
 
   await fetchJobs(server.ext.orm.em.fork(), server.logger, server.ext, server.ext);
@@ -64,6 +78,16 @@ it("fetches the data", async () => {
   const jobs = await em.find(JobInfo, {});
 
   expect(jobs).toBeArrayOfSize(testData.length);
+
+  // check the cluster is mapped to scow cluster id
+  const testDataJobToCluster = testData.reduce((acc, x) => {
+    acc[x.biJobIndex] = x.cluster;
+    return acc;
+  }, {} as Record<string, string>);
+
+  jobs.forEach((x) => {
+    expect(x.cluster).toBe(clusterNameToScowClusterId(testDataJobToCluster[x.biJobIndex]));
+  });
 
   jobs.sort((a, b) => a.biJobIndex - b.biJobIndex);
 
@@ -98,7 +122,7 @@ it("fetches the data", async () => {
     }
   });
 
-  await reloadEntities([data.tenant, data.anotherTenant, data.accountA, data.accountB, data.uaAA, data.uaBB]);
+  await reloadEntities(em, [data.tenant, data.anotherTenant, data.accountA, data.accountB, data.uaAA, data.uaBB]);
   expect(data.accountA.balance.toNumber()).toBe(accountACharges.negated().toNumber());
   expect(data.accountB.balance.toNumber()).toBe(accountBCharges.negated().toNumber());
   expect(data.tenant.balance.toNumber()).toBe(defaultTenantCharges.negated().toNumber());

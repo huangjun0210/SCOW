@@ -1,12 +1,27 @@
-import { Button, DatePicker, Form, Input, Select, Table } from "antd";
-import { useForm } from "antd/lib/form/Form";
-import moment from "moment";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { defaultPresets, formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { useDidUpdateEffect } from "@scow/lib-web/build/utils/hooks";
+import { queryToString, useQuerystring } from "@scow/lib-web/build/utils/querystring";
+import { Button, DatePicker, Form, Table } from "antd";
+import dayjs from "dayjs";
+import Router from "next/router";
 import { useCallback, useState } from "react";
 import { useAsync } from "react-async";
 import { api } from "src/apis";
 import { FilterFormContainer } from "src/components/FilterFormContainer";
-import { defaultRanges, formatDateTime } from "src/utils/datetime";
-import { useDidUpdateEffect } from "src/utils/hooks";
+
+import { TenantOrAccountRadio } from "./TenantOrAccountRadio";
 
 interface Props {
   accountNames?: string[];
@@ -17,29 +32,34 @@ interface Props {
 
 interface FilterForm {
   accountName?: string;
-  time: [moment.Moment, moment.Moment],
+  time: [dayjs.Dayjs, dayjs.Dayjs],
 }
 
-const today = moment().endOf("day");
+const today = dayjs().endOf("day");
 
 export const PaymentTable: React.FC<Props> = ({
   accountNames, showAccountName, showAuditInfo,
 }) => {
 
-  const [form] = useForm<FilterForm>();
+  const urlQuery = useQuerystring();
+  const account = queryToString(urlQuery.account) || undefined;
 
-  const [query, setQuery] = useState({
-    accountName: accountNames?.[0],
-    time: [today.clone().subtract(1, "year"), today],
-  });
+  const [form] = Form.useForm<FilterForm>();
+
+  const [query, setQuery] = useState(() => ({
+    accountName: showAccountName ? account : accountNames?.[0],
+    time: [today.subtract(1, "year"), today],
+  }));
 
   const { data, isLoading } = useAsync({
     promiseFn: useCallback(async () => {
-      return api.getPayments({ query: {
-        accountName: query.accountName,
-        startTime: query.time[0].clone().startOf("day").toISOString(),
-        endTime: query.time[1].clone().endOf("day").toISOString(),
-      } });
+      return api.getPayments({
+        query: {
+          accountName: query.accountName,
+          startTime: query.time[0].startOf("day").toISOString(),
+          endTime: query.time[1].endOf("day").toISOString(),
+        },
+      });
     }, [query]),
   });
 
@@ -60,24 +80,24 @@ export const PaymentTable: React.FC<Props> = ({
           }}
         >
           {
-            accountNames
-              ? accountNames.length === 1
-                ? undefined
-                : (
-                  <Form.Item label="账户" name="accountName">
-                    <Select placeholder="选择账户">
-                      {accountNames.map((x) => <Select.Option key={x} value={x}>{x}</Select.Option>)}
-                    </Select>
-                  </Form.Item>
-                )
-              : (
-                <Form.Item label="账户" name="accountName">
-                  <Input />
-                </Form.Item>
-              )
+            // 根据是否在table展示账户名来判断是租户管理还是账户管理下的充值记录，如果是租户下才展示
+            showAccountName ? (
+              <Form.Item label="充值对象" name="accountName">
+                <TenantOrAccountRadio
+                  value={account || undefined}
+                  onChange={(account) => {
+                    setQuery((q) => ({ ...q, accountName: account }));
+                    Router.push({
+                      pathname: "/tenant/finance/payments", query: account ? { account } : undefined,
+                    }); }
+                  }
+                />
+              </Form.Item>
+            ) : ""
           }
+
           <Form.Item label="时间" name="time">
-            <DatePicker.RangePicker allowClear={false} ranges={defaultRanges()} />
+            <DatePicker.RangePicker allowClear={false} presets={defaultPresets} />
           </Form.Item>
           <Form.Item label="总数">
             <strong>
@@ -101,7 +121,7 @@ export const PaymentTable: React.FC<Props> = ({
         pagination={{ showSizeChanger: true }}
       >
         {
-          showAccountName ? (
+          showAccountName && account ? (
             <Table.Column dataIndex="accountName" title="账户" />
           ) : undefined
         }

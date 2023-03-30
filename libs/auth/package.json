@@ -1,20 +1,24 @@
 {
   "name": "@scow/lib-auth",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "private": true,
   "description": "",
   "main": "build/index.js",
   "scripts": {
+    "dev": "tsc -p tsconfig.build.json && (concurrently \"tsc -p tsconfig.build.json -w\" \"tsc-alias -p tsconfig.build.json -w\")",
     "build": "rimraf build && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "test": "jest"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "undici": "5.10.0"
-  },
+  "files": [
+    "build",
+    "!**/*.map"
+  ],
+  "author": "PKUHPC (https://github.com/PKUHPC)",
+  "license": "Mulan PSL v2",
+  "repository": "https://github.com/PKUHPC/SCOW",
+  "dependencies": {},
   "devDependencies": {
-    "pino": "8.5.0"
+    "ts-log": "2.2.5"
   },
   "volta": {
     "extends": "../../package.json"

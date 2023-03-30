@@ -1,5 +1,18 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { AccountOps } from "src/clusterops/api/account";
 import { SlurmClusterInfo } from "src/clusterops/slurm";
+import { handleSimpleResponse } from "src/clusterops/slurm/utils/slurm";
 
 export const slurmAccountOps = ({ executeSlurmScript }: SlurmClusterInfo): AccountOps => {
 
@@ -8,21 +21,15 @@ export const slurmAccountOps = ({ executeSlurmScript }: SlurmClusterInfo): Accou
       const { accountName, ownerId } = request;
       const result = await executeSlurmScript(["-c", accountName, "0", ownerId ], logger);
 
-      if (result.code === 6) {
-        return { code: "ALREADY_EXISTS" };
-      }
-      return { code: "OK" };
+      return handleSimpleResponse(result, { 6: "ALREADY_EXISTS" });
     },
 
     deleteAccount: async ({ request, logger }) => {
       const { accountName } = request;
       const result = await executeSlurmScript(["-a", accountName], logger);
 
-      if (result.code === 7) {
-        return { code: "NOT_FOUND" };
-      }
+      return handleSimpleResponse(result, { 7: "NOT_FOUND" });
 
-      return { code: "OK" };
     },
 
     blockAccount: async ({ request, logger }) => {
@@ -30,15 +37,7 @@ export const slurmAccountOps = ({ executeSlurmScript }: SlurmClusterInfo): Accou
 
       const result = await executeSlurmScript(["-b", accountName], logger);
 
-      if (result.code === 8) {
-        return { code: "OK", executed: false };
-      }
-
-      if (result.code === 7) {
-        return { code: "NOT_FOUND" };
-      }
-
-      return { code: "OK", executed: true };
+      return handleSimpleResponse(result, { 8: "ALREADY_BLOCKED", 7: "NOT_FOUND" });
     },
 
     unblockAccount: async ({ request, logger }) => {
@@ -46,15 +45,7 @@ export const slurmAccountOps = ({ executeSlurmScript }: SlurmClusterInfo): Accou
 
       const result = await executeSlurmScript(["-d", accountName], logger);
 
-      if (result.code === 9) {
-        return { code: "OK", executed: false };
-      }
-
-      if (result.code === 7) {
-        return { code: "NOT_FOUND" };
-      }
-
-      return { code: "OK", executed: true };
+      return handleSimpleResponse(result, { 9: "ALREADY_UNBLOCKED", 7: "NOT_FOUND" });
     },
   };
 };

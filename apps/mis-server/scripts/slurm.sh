@@ -1,11 +1,8 @@
-
-
 #!/bin/bash
 
 usage="Usage: ./slurm [OPTION]...[PARAM]...
     -c, -C, --addAcct            add an account to ldap and slurm partition
     -g, -G, --addToAcct          add user to an exist account
-    -e, -E, --addExclNode        add exclusive nodes to users
     -v, -V, --delUser            delete user
     -k, -K, --delFromAcct        delete user from an account
     -a, -A, --delAcct            delete account
@@ -29,11 +26,9 @@ usage="Usage: ./slurm [OPTION]...[PARAM]...
     -t, -T, --queryJobTime       query timelimit of a job
     -h, -H, --help               display this help and exit
 "
-#     -s, -S, --addShareNode       add share nodes to users
 
 
 USE='Usage: ./slurm [OPTION]...[PARAM]...
-
 use "./slurm --help" to find some help!'
 
 nocommand="Error: No command specified."
@@ -57,16 +52,6 @@ example:
 add campus user Ashlee to an exist account named test: ./slurm -g test 0 Ashlee
 add offCampus user Ashlee to an exist account named test: ./slurm -g test 1 Ashlee password
 "
-addShareNode="Usage: add share nodes to users
-./slurm -s  account partition nodenumber
-example:
-add 5 nodes in Par2 to an account test:    ./slurm -s test Par2 5
-"
-addExclNode="Usage:  add exclusive nodes to users
-./slurm -e account partition nodenumber
-example:
-add 5 nodes in Par2 to an account test:    ./slurm -e test Par2 5
-"
 delUser="Usage: delete user
  ./slurm -v userID   delete user
 example:
@@ -81,18 +66,6 @@ delAcct="Usage: delete account
 ./slurm -a account
 example:
 delete an account names test:  ./slurm -a test
-"
-delExclNode="Usage: delete exclusive nodes of an account
-./slurm -n account
-example:
-delete exclusive nodes of account named test, if nodes's within the range of 01-05,set this nodes to partition test1, else set to partition test2
-./slurm -n test
-"
-delShareNode="Usage: delete share nodes of an account
-./slurm -t account partition
-example:
-delete share nodes of account named test
-./slurm -t test
 "
 addAllowAcct="Usage: allow an account use resources
 ./slurm -d account
@@ -196,11 +169,12 @@ example:
 query timelimit of job 4300: ./slurm -t 4300
 "
 
-mysql="mysql -uroot -p$MYSQL_PASSWORD"
+mysql="mysql -h$DB_HOST -P$DB_PORT -u$DB_USER -p$DB_PASSWORD"
+slurm_acct_db_name="$SLURM_ACCT_DB_NAME"
 basePartition=($BASE_PARTITIONS)
-allPartition=("compute")
-declare -A exclPartition
-exclPartition=([compute]="20" )
+base_qos=`sacctmgr -n show qos format=Name | tr '\n' ',' | sed s/[[:space:]]//g`
+base_qos=${base_qos%?}
+default_qos="normal"
 assoc_table=${CLUSTER_NAME}_assoc_table
 
 addUser() #abandon !!!!!2017-09-24
@@ -243,7 +217,7 @@ addAcct(){
             for var in ${basePartition[@]}
             do
                 sacctmgr -i create user name=$4 partition=$var account=$2
-                sacctmgr -i modify user $4 set qos=normal,high,low DefaultQOS=low
+                sacctmgr -i modify user $4 set qos=$base_qos DefaultQOS=$default_qos
             done
         else
             echo "Account $2 is already exist!"
@@ -264,32 +238,24 @@ addToAcct(){
         username=$4
         acct=`sacctmgr -n show acct $2`
         user=`sacctmgr -n show user $4`
-        user_acct=`$mysql --skip-column-names slurm_acct_db -e "select * from $assoc_table where user='$4' and acct='$2' and deleted=0"`
-        Is_partition=`sinfo | awk {'print $1'} | sed '1d' | sort -u`
+        user_acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select * from $assoc_table where user='$4' and acct='$2' and deleted=0"`
         user2=`ldapsearch -x  uid=$4 | grep homeDirectory`
         if [ "$acct" != "" ] ; then
             if [ "$user" = "" ] || [ "$user2" = "" ]; then # user is not exist
                 for var in ${basePartition[@]}
                 do
                     sacctmgr -i create user name=$4 partition=$var account=$2
-                    sacctmgr -i modify user $4 set qos=normal,high,low DefaultQOS=low
+                    sacctmgr -i modify user $4 set qos=$base_qos DefaultQOS=$default_qos
                 done
             elif [ "$user_acct" = "" ] ; then # user is not exist in this account
                 for var in ${basePartition[@]}
                 do
                     sacctmgr -i create user name=$4 partition=$var account=$2
-                    sacctmgr -i modify user $4 set qos=normal,high,low DefaultQOS=low
+                    sacctmgr -i modify user $4 set qos=$base_qos DefaultQOS=$default_qos
                 done
             else
                 echo -e "User $4 is already exist in account $2!"
                 exit 3
-            fi
-            if  echo "${Is_partition}" | grep -w "$2" > /dev/null ; then
-                sacctmgr -i create user name=$4 partition=$2 account=$2
-            fi
-            qos_name=`$mysql --skip-column-names slurm_acct_db -e "select name from qos_table where name='$2' and deleted='0'"`
-            if [ "$qos_name" != "" ] ; then
-                sacctmgr -i modify user where name=$4 account=$2 set qos+=$2 DefaultQOS=low
             fi
         else
             echo "Account $2 is not exist!"
@@ -297,69 +263,6 @@ addToAcct(){
         fi
     else
         echo -e "$addToAcct\n"
-        echo "$nocommand"
-    fi
-}
-
-addShareNode(){
-## ./slurm -s  account partition nodenumber
-    if [ $# == 4 ] ; then
-        account=`$mysql slurm_acct_db -e "select * from acct_table where name='$2' and deleted=0"`
-        if [ "$account" = "" ] ; then
-            echo "This account $2 is not exist"
-            exit 7
-        elif  echo "${basePartition[@]}" | grep -w "$3" > /dev/null ; then
-            sacctmgr -i add qos $2
-            sacctmgr -i modify qos $2 set GrpCPUs=$4
-            ## find all users in the account and add these
-            result=`$mysql --skip-column-names slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0 and partition='$3'" | sort -u `
-            for line in $result
-            do
-                sacctmgr -i modify user where name=$line account=$2 partition=$3 set qos+=$2 DefaultQOS=low
-            done
-            allowQos=`scontrol show partition $3 | grep AllowQos= | awk {'print $3'} | awk -F '=' {'print $2'}`
-            allowQos=$allowQos",$2"
-            scontrol update partition=$3 AllowQos=$allowQos
-        else
-            echo "Partition $3 is not exist or not allow to add share nodes."
-        fi
-    else
-        echo -e "$addShareNode\n"
-        echo "$nocommand"
-    fi
-
-}
-addExclNode(){
-#./slurm -e account partition nodenumber
-#example:
-#add 5 nodes in Par2 to an account test:    ./slurm -e test Par2 5
-    if [ $# == 4 ] ; then
-        account=`$mysql slurm_acct_db -e "select * from acct_table where name='$2' and deleted=0"`
-        if [ "$account" = "" ] ; then
-            echo -e "\nThis account $2 is not exist."
-        elif echo "${!exclPartition[@]}" | grep -w "$3" > /dev/null ; then
-            if [[ $[`/usr/bin/nodeset -c @$3`-$4] -lt ${exclPartition["$3"]} ]] ; then
-                echo -e "\nNodes in this partition is less than expacted after allocated, your request is refused. "
-                return
-            fi
-            newnode=`(/usr/bin/nodeset --pick=$4 -f @$3)`
-            last=`/usr/bin/nodeset -f @$3 -x $newnode`
-            scontrol create partition=$2 nodes=$newnode
-            scontrol update partition=$3 nodes=$last
-            sed -i "s/\($3: \).*/\1$last/" /etc/clustershell/groups.d/local.cfg
-            echo $2: $newnode >> /etc/clustershell/groups.d/local.cfg
-
-            ## find all users in the account and add these
-            result=`$mysql --skip-column-names slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0" | sort -u`
-            for line in $result
-            do
-                sacctmgr -i create user name=$line account=$2 partition=$2
-            done
-        else
-            echo -e "\nPartition $3 is not exist or not allow to add exclusive nodes."
-        fi
-    else
-        echo -e "$addExclNode\n"
         echo "$nocommand"
     fi
 }
@@ -374,20 +277,19 @@ delUser(){
         else
             sacctmgr -i delete user name=$2
             ## delete ralated null account
-            acct=`$mysql --skip-column-names slurm_acct_db -e "select DISTINCT acct from $assoc_table where user='$2' and deleted=0"`
+            acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select DISTINCT acct from $assoc_table where user='$2' and deleted=0"`
         fi
     else
         echo -e "$delUser\n"
         echo "$nocommand"
     fi
-
 }
 delAcct(){ ## attention: ensure this account is not any user's default account
 ## ./slurm -a account
 ## example:
 ## delete an account names test:  ./slurm -a test
     if [ $# == 2 ]; then
-        #acct=`$mysql slurm_acct_db -e "select * from acct_table where name='$2' and deleted=0"`
+        #acct=`$mysql $slurm_acct_db_name -e "select * from acct_table where name='$2' and deleted=0"`
         acct=`sacctmgr -n show acct $2`
         if [ "$acct" == "" ] ; then
             echo "Account $2 is not exist!"
@@ -399,37 +301,26 @@ delAcct(){ ## attention: ensure this account is not any user's default account
                 echo "This acct is running some jobs!"
                 exit 8
             fi
-            user=`$mysql --skip-column-names slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0 " | sort -u`
+            user=`$mysql --skip-column-names $slurm_acct_db_name -e "select user from $assoc_table where acct='$2' and deleted=0 " | sort -u`
             for line in $user
             do
-                user_acct=`$mysql --skip-column-names slurm_acct_db -e "select acct from $assoc_table where user='$line' and deleted=0" | sort -u | sed "s/^$2$//g"`
+                user_acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select acct from $assoc_table where user='$line' and deleted=0" | sort -u | sed "s/^$2$//g"`
                 if [ "$user_acct" == "" ] ; then  ## users that only have an account, we should delete these users before delete account
-                    /root/HPCSH/slurm -v $line
+                    # delete user
+                    sacctmgr -i delete user name=$line
+                    ## delete ralated null account
+                    acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select DISTINCT acct from $assoc_table where user='$line' and deleted=0"`
                 else
                     choose=`echo $user_acct | awk {'print $1'}`
              #       echo "choose="$choose
                     #wrong if the default account is not $2 , user's default account shouldn't change
-                    defAcct=`$mysql --skip-column-names slurm_acct_db -e "select acct from $assoc_table where user="$line" and deleted=0 and is_def=1" | sort | uniq`
+                    defAcct=`$mysql --skip-column-names $slurm_acct_db_name -e "select acct from $assoc_table where user="$line" and deleted=0 and is_def=1" | sort | uniq`
                     if [ "$defAcct" = "$2" ] ; then
                         sacctmgr -i update user set DefaultAccount=$choose where user=$line
                     fi
                 fi
             done
             sacctmgr -i delete account name=$2
-            ####  if the account has shareNode or ExclusivePartition add this user to the qos or partition
-            Is_partition=`sinfo | awk {'print $1'} | sed '1d' | sort -u`
-            if  echo "${Is_partition}" | grep -w "$2" > /dev/null ; then
-                /root/HPCSH/slurm -n $2
-            fi
-            qos_name=`$mysql --skip-column-names slurm_acct_db -e "select name from qos_table where name='$2' and deleted='0'"`
-            if [ "$qos_name" != "" ] ; then
-                sacctmgr -i delete qos $2
-                for line in $Is_partition
-                do
-                     qos=`scontrol show partition $3 | grep AllowQos= | awk {'print $3'} | awk -F '=' {'print $2'} | sed "s/^$2$//g" | sed 's/,,/,/g'`
-                     scontrol update partition=$line AllowQos=$qos
-                done
-            fi
 
         fi
     else
@@ -445,25 +336,28 @@ delFromAcct(){   #####2017-08-31   not rewrite it
     if [ $# -gt 2 ] ; then
         acct=$2
         deleUser=$3
-        #account=`$mysql slurm_acct_db -e "select * from acct_table where name='$2' and deleted=0"`
+        #account=`$mysql $slurm_acct_db_name -e "select * from acct_table where name='$2' and deleted=0"`
         account=`sacctmgr -n show acct $2`
         if [ "$account" = "" ] ; then
             echo "This account $2 is not exist"
             exit 7
         fi
-        user=`$mysql --skip-column-names slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0 " | sort -u`
+        user=`$mysql --skip-column-names $slurm_acct_db_name -e "select user from $assoc_table where acct='$2' and deleted=0 " | sort -u`
         shift 2
         while [ $1 ]
         do
             if echo "${user[@]}" | grep -w "$1" > /dev/null ; then
-                user_acct=`$mysql --skip-column-names slurm_acct_db -e "select acct from $assoc_table where user='$1' and deleted=0" | sort -u | sed "s/^$acct$//g"`
+                user_acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select acct from $assoc_table where user='$1' and deleted=0" | sort -u | sed "s/^$acct$//g"`
                 if [ "$user_acct" = "" ] ; then ## user only has one account, that's $2=acct
                     echo "here only one account!"
-                    /root/HPCSH/slurm -v $1
+                    # delete user
+                    sacctmgr -i delete user name=$1
+                    ## delete ralated null account
+                    acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select DISTINCT acct from $assoc_table where user='$1' and deleted=0"`
                 else
                     choose=`echo $user_acct | awk {'print $1'}`
                     #wrong if the default account is not $2 , user's default account shouldn't change
-                    defAcct=`$mysql --skip-column-names slurm_acct_db -e "select acct from $assoc_table where user="$1" and deleted=0 and is_def=1" | sort | uniq`
+                    defAcct=`$mysql --skip-column-names $slurm_acct_db_name -e "select acct from $assoc_table where user="$1" and deleted=0 and is_def=1" | sort | uniq`
                     #echo defAcct=$defAcct
                     if [ "$defAcct" = "$acct" ] ; then
                         sacctmgr -i update user set DefaultAccount=$choose where user=$1
@@ -474,11 +368,6 @@ delFromAcct(){   #####2017-08-31   not rewrite it
                         exit 8
                     fi
                     sacctmgr -i delete user name=$1 account=$acct
-                   # $mysql slurm_acct_db -e "delete from $assoc_table where user='$1'"
-                    qos_name=`$mysql --skip-column-names slurm_acct_db -e "select name from qos_table where name='$acct' and deleted='0'"`
-                    if [ "$qos_name" != "" ] ; then
-                        sacctmgr -i modify user $1 set qos-=$acct
-                    fi
                 fi
             else
                 echo "User $1 is not exist in account $acct!"
@@ -491,66 +380,7 @@ delFromAcct(){   #####2017-08-31   not rewrite it
         echo "$nocommand"
     fi
 }
-delExclNode(){
-#./slurm -n account
-#example:
-#delete exclusive nodes of account named test, if nodes's within the range of 01-05,set this nodes to partition test1, else set to partition test2
-#./slurm -n test
-    if [ $# == 2 ] ; then
-        account=`sacctmgr -n show acct $2`
-        if [ "$account" = "" ] ; then
-            echo "This account $2 is not exist"
-            exit 7
-        fi
-        random=`/usr/bin/nodeset --pick=1 -f @$2`
-        # ${random:3} gpu01   left 01
-        if [ ${random:3} -le 5 ] ; then
-            part="test1"
-        else
-            part="test2"
-        fi
-        echo $part
-        echo $2
-        last=`/usr/bin/nodeset -f @$2 @$part`
-        scontrol delete partition=$2
-        scontrol update partition=$part nodes=$last
-        sed -i "s/\($part: \).*/\1$last/" /etc/clustershell/groups.d/local.cfg
-        sed -i "/^$2:/d" /etc/clustershell/groups.d/local.cfg
-        ## find all users in the account and add these
-        result=`$mysql slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0"`
-        for line in ${result#*user}
-        do
-            sacctmgr -i delete user name=$line account=$2 partition=$2
-        done
-    else
-        echo -e "$addExclNode\n"
-        echo "$nocommand"
-    fi
 
-}
-delShareNode(){
-#./slurm -t account
-#example:
-#delete share nodes of account named test  ./slurm -t test
-    if [ $# == 3 ] ; then
-        qos=`$mysql slurm_acct_db -e "select * from qos_table where name='$2' and deleted=0"`
-        if [ "$qos" = "" ] ; then
-            echo -e "\nThis qos $2 is not exist!"
-        else
-            sacctmgr -i delete qos $2
-            result=`$mysql --skip-column-names slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0"`
-            Is_partition=`sinfo | awk {'print $1'} | sed '1d' | sort -u`
-            for line in $Is_partition
-            do
-                qos=`scontrol show partition $3 | grep AllowQos= | awk {'print $3'} | awk -F '=' {'print $2'} | sed "s/^$2$//g" | sed 's/,,/,/g'`
-                scontrol update partition=$3 AllowQos=$qos
-            done
-        fi
-    else
-        echo -e "$delShareNode\n"
-        echo "$nocommand"
-    fi
- }
 addAllowAcct(){
 #addAllowAcct="Usage: allow an account use resources
 #./slurm -d account
@@ -563,7 +393,7 @@ addAllowAcct(){
             echo "Account $2 is not exist!"
             exit 7
         fi
-        allow=`scontrol show partition compute | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
+        allow=`scontrol show partition ${basePartition[0]} | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
         if echo "${allow}" | grep -w "$2" > /dev/null ; then
             echo "Account $2 is already allowed!"
             exit 9
@@ -575,8 +405,6 @@ addAllowAcct(){
             do
                 scontrol update partition=$var AllowAccounts=$allowAcct
             done
-            # GPU36 parition only can use by cryoem teams
-            # scontrol update partition=GPU36 AllowAccounts=hpc1606182266,hpc1706178357,hpc1506177320,hpc0006155389
             sed -i "s/\(AllowAccounts=\).*/\1$allowAcct/"   /etc/slurm/slurm.conf
             echo "Allow account $2 succeed!"
             exit 0
@@ -585,7 +413,6 @@ addAllowAcct(){
         echo -e "$addAllowAcct\n"
         echo "$nocommand"
     fi
-
 }
 
 blockAcct(){
@@ -600,15 +427,23 @@ blockAcct(){
             echo "Account $2 is not exist!"
             exit 7
         fi
-        allow=`scontrol show partition compute | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
-        if echo "${allow}" | grep -w "$2" > /dev/null ; then
+        allow=`scontrol show partition ${basePartition[0]} | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
+        if [ $allow == "ALL" ] ; then
+            acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select DISTINCT acct from $assoc_table where deleted=0 and acct != '$2'"`
+            allowAcct=`echo $acct | tr ' ' ','`
+            for var in ${basePartition[@]}
+            do
+                scontrol update partition=$var AllowAccounts=$allowAcct
+            done
+            sed -i "s/\(AllowAccounts=\).*/\1$allowAcct/"   /etc/slurm/slurm.conf
+            echo "Block account $2 succeed!"
+            exit 0
+        elif echo "${allow}" | grep -w "$2" > /dev/null ; then
             allowAcct=`echo $allow | sed "s/$2//g" | sed 's/,,/,/g'`
             for var in ${basePartition[@]}
             do
                 scontrol update partition=$var AllowAccounts=$allowAcct
             done
-            # GPU36 parition only can use by cryoem teams
-            # scontrol update partition=GPU36 AllowAccounts=hpc1606182266,hpc1706178357,hpc1506177320,hpc0006155389
             sed -i "s/\(AllowAccounts=\).*/\1$allowAcct/"   /etc/slurm/slurm.conf
             echo "Block account $2 succeed!"
             exit 0
@@ -620,7 +455,6 @@ blockAcct(){
         echo -e "$blockAcct\n"
         echo $nocommand
     fi
-
 }
 blockUser(){
 #blockUser="Usage: block a user
@@ -634,8 +468,8 @@ blockUser(){
             echo "User $2 is not exist!"
             exit 7
         fi
-        qos=`sacctmgr show assoc format=user,qos | grep $2 | uniq | awk '{print $2}'`
-        if [ "$qos" == "block" ] ; then
+        MaxSubmitJobs=`$mysql --skip-column-names $slurm_acct_db_name -e " select distinct max_submit_jobs from $assoc_table where user='$2'"`
+        if [ "$MaxSubmitJobs" == 0 ] ; then
             echo "User $2 is already blocked!"
             exit 8
         else
@@ -647,17 +481,16 @@ blockUser(){
         echo -e "$blockUser\n"
         echo $nocommand
     fi
-
 }
 blockUserfromAcct(){
-# sacctmgr modify user where name=1601214515 account=hpc0006177054  set MaxSubmitJobs=0
+# sacctmgr modify user where name=0005533333 account=hpc0005533333  set MaxSubmitJobs=0
 #blockUserfromAcct="Usage: block a user from an account
 #./slurm -o account user
 #example:
 #block a user named test from an account named acct
 #./slurm -o acct test
     if [[ $# == 3 ]] ; then
-        #user=`$mysql --skip-column-names slurm_acct_db -e "select user from $assoc_table where acct='$2' and deleted=0 " | sort -u`
+        #user=`$mysql --skip-column-names $slurm_acct_db_name -e "select user from $assoc_table where acct='$2' and deleted=0 " | sort -u`
         acct=`sacctmgr -n show acct $2`
         if [ "$acct" == "" ] ; then
             echo "Account $2 is not exist!"
@@ -668,7 +501,7 @@ blockUserfromAcct(){
             echo "User $3 is not exist!"
             exit 4
         fi
-        exist=`sacctmgr show assoc format=user,acct%20 | grep $2 | awk '{print $1}' | uniq | grep $3`
+        exist=`sacctmgr show assoc format=user%50,acct%50 | grep $2 | awk '{print $1}' | uniq | grep $3`
         if [ "$exist" == "" ] ; then
             echo "User $3 is not exist in account $2"
             exit 4
@@ -681,7 +514,6 @@ blockUserfromAcct(){
         echo -e "$blockUserfromAcct\n"
         echo $nocommand
     fi
-
 }
 
 allowUser(){
@@ -703,8 +535,6 @@ allowUser(){
         echo -e "$allowUser\n"
         echo $nocommand
     fi
-
-
 }
 allowUserfromAcct(){
 #allowUserfromAcct="Usage: allow a user from an account
@@ -723,7 +553,7 @@ allowUserfromAcct(){
             echo "User $3 is not exist!"
             exit 4
         fi
-        exist=`sacctmgr show assoc format=user,acct%20 | grep $2 | awk '{print $1}' | uniq | grep $3`
+        exist=`sacctmgr show assoc format=user%50,acct%50 | grep $2 | awk '{print $1}' | uniq | grep $3`
         if [ "$exist" == "" ] ; then
             echo "User $3 is not exist in account $2"
             exit 4
@@ -736,7 +566,6 @@ allowUserfromAcct(){
         echo -e "$allowUserfromAcct\n"
         echo $nocommand
     fi
-
 }
 
 queryUser(){
@@ -752,12 +581,12 @@ queryUser(){
             echo "User $2 is not exist!"
             exit 7
         fi
-        qos=`sacctmgr show assoc format=user,qos | grep $2 | uniq | awk '{print $2}'`
-        if [ "$qos" == "block" ] ; then
-            echo "User $2 is blocked!"
+        MaxSubmitJobs=`$mysql --skip-column-names $slurm_acct_db_name -e " select distinct max_submit_jobs from $assoc_table where user='$2'"`
+        if [ "$MaxSubmitJobs" == "NULL" ] ; then
+            echo "User $2 is allowed!"
             exit 0
         else
-            echo "User $2 is allowed!"
+            echo "User $2 is blocked!"
             exit 0
         fi
     else
@@ -783,26 +612,25 @@ queryUserInAcct(){
             exit 4
         fi
 
-        exist=`sacctmgr show assoc format=user,acct%20 | grep $2 | awk '{print $1}' | uniq | grep $3`
+        exist=`sacctmgr show assoc format=user%50,acct%50 | grep $2 | awk '{print $1}' | uniq | grep $3`
         if [ "$exist" == "" ] ; then
             echo "User $3 is not exist in account $2"
             exit 4
         else
-            #MaxSubmitJobs=`$mysql --skip-column-names slurm_acct_db -e " select distinct max_submit_jobs from $assoc_table where acct='$2' and user='$3'"`
-            qos=`sacctmgr show assoc format=user,acct%20,qos | grep -E "$3.*$2"  | uniq | awk '{print $3}'`
-            if [ "$qos" == "block" ] ; then
-                echo "User $3 is blocked in account $2!"
-                exit 0
-            else
+             MaxSubmitJobs=`$mysql --skip-column-names $slurm_acct_db_name -e " select distinct max_submit_jobs from $assoc_table where acct='$2' and user='$3'"`
+            if [ "$MaxSubmitJobs" == "NULL" ] ; then
                 echo "User $3 is allowed in account $2!"
                 exit 0
+            else
+                echo "User $3 is blocked in account $2!"
+                exit 0
             fi
+
         fi
     else
         echo -e "$queryUserInAcct\n"
         echo $nocommand
     fi
-
 }
 
 queryDenyAcct(){
@@ -817,7 +645,11 @@ queryDenyAcct(){
             echo "Account $2 is not exist!"
             exit 7
         fi
-        allow=`scontrol show partition compute | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
+        allow=`scontrol show partition ${basePartition[0]} | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
+        if [ $allow == "ALL" ] ; then
+            echo "Account $2 is allowed!"
+            exit 0
+        fi
         if echo "${allow}" | grep -w "$2" > /dev/null ; then
             echo "Account $2 is allowed!"
             exit 0
@@ -840,7 +672,7 @@ queryAcctBatch(){
     if [[ $# == 2 ]] ; then
         str=$2
         str=${str//,/ }
-        allow=`scontrol show partition compute | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
+        allow=`scontrol show partition ${basePartition[0]} | grep AllowAccounts | awk '{print $2}' | awk -F "=" '{print $2}'`
         arr=($str)
         for acct in ${arr[*]}
         do
@@ -849,7 +681,9 @@ queryAcctBatch(){
                 echo "Account $acct is not exist!"
                 continue
             fi
-            if echo "${allow}" | grep -w "$acct" > /dev/null ; then
+            if [ $allow == "ALL" ] ; then
+                echo "Account $acct is allowed!"
+            elif echo "${allow}" | grep -w "$acct" > /dev/null ; then
                 echo "Account $acct is allowed!"
             else
                 echo "Account $acct is blocked!"
@@ -859,7 +693,6 @@ queryAcctBatch(){
         echo -e "$queryDenyAcct\n"
         echo "$nocommand"
     fi
-
 }
 
 AllUserInAcct(){
@@ -875,7 +708,7 @@ AllUserInAcct(){
             echo "Account $2 is not exist!"
             exit 7
         fi
-        user_acct=`$mysql --skip-column-names slurm_acct_db -e "select distinct user,qos from $assoc_table where acct='$2' and deleted='0'"`
+        user_acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select distinct user,qos from $assoc_table where acct='$2' and deleted='0'"`
         if [ "$user_acct" == "" ] ; then
             echo "There is no user in account $2!"
             exit 0
@@ -890,7 +723,7 @@ AllUserInAcct(){
                 shift 1
                 continue
             fi
-            MaxSubmitJobs=`$mysql --skip-column-names slurm_acct_db -e " select distinct max_submit_jobs from $assoc_table where acct='$acct' and user='$1'"`
+            MaxSubmitJobs=`$mysql --skip-column-names $slurm_acct_db_name -e " select distinct max_submit_jobs from $assoc_table where acct='$acct' and user='$1'"`
             if [ "$MaxSubmitJobs" == "NULL" ] ; then
                 echo "$1 : allowd!"
             else
@@ -904,7 +737,6 @@ AllUserInAcct(){
         echo -e "$AllUserInAcct\n"
         echo "$nocommand"
     fi
-
 }
 
 AllUserInAllAcct(){
@@ -915,11 +747,11 @@ AllUserInAllAcct(){
 #./slurm -l test
 
     if [[ $# == 2 && $2 == "all" ]] ; then
-        all_acct=`$mysql --skip-column-names slurm_acct_db -e "select distinct name from acct_table where deleted='0'"`
+        all_acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select distinct name from acct_table where deleted='0'"`
 
         for acct in $all_acct
         do
-            user_acct=`$mysql --skip-column-names slurm_acct_db -e "select distinct user from $assoc_table where acct='$acct' and deleted='0'"`
+            user_acct=`$mysql --skip-column-names $slurm_acct_db_name -e "select distinct user from $assoc_table where acct='$acct' and deleted='0'"`
             if [ "$user_acct" == "" ] ; then
                 echo $acct
                 echo "There is no user in account $2!"
@@ -932,7 +764,7 @@ AllUserInAllAcct(){
             set -- `echo $user_acct`
             while [ $1 ]
             do
-                MaxSubmitJobs=`$mysql --skip-column-names slurm_acct_db -e " select distinct max_submit_jobs from $assoc_table where acct='$acct' and user='$1'"`
+                MaxSubmitJobs=`$mysql --skip-column-names $slurm_acct_db_name -e " select distinct max_submit_jobs from $assoc_table where acct='$acct' and user='$1'"`
                 if [ "$MaxSubmitJobs" == "NULL" ] ; then
                     echo "$1 : allowed!"
                 else
@@ -946,7 +778,6 @@ AllUserInAllAcct(){
         echo -e "$AllUserInAllAcct\n"
         echo "$nocommand"
     fi
-
 }
 addQuota()
 {
@@ -979,7 +810,6 @@ addQuota()
         echo -e "$addQuota\n"
         echo "$nocommand"
     fi
-
 }
 
 decreaseQuota()
@@ -1013,7 +843,6 @@ decreaseQuota()
         echo -e "$decreaseQuota\n"
         echo "$nocommand"
     fi
-
 }
 setQuota(){
 # Usage: set quota to a user
@@ -1042,7 +871,6 @@ setQuota(){
         echo -e "$setQuota\n"
         echo "$nocommand"
     fi
-
 }
 
 queryQuota(){
@@ -1065,7 +893,6 @@ queryQuota(){
         echo -e "$queryQuota\n"
         echo "$nocommand"
     fi
-
 }
 changeTimelimit(){
 #./slurm -n jobId time(minute)
@@ -1091,7 +918,6 @@ changeTimelimit(){
         echo -e "$changeTimelimit\n"
         echo "$nocommand"
     fi
-
 }
 queryJobTime(){
 #./slurm -t jobId
@@ -1112,7 +938,6 @@ queryJobTime(){
         echo -e "$changeTimelimit\n"
         echo "$nocommand"
     fi
-
 }
 
 case $1 in
@@ -1121,12 +946,8 @@ case $1 in
     -i)  addUser "$@"; ;;
     --addAcct | -C) echo "$addAcct";;
     -c)  addAcct "$@"; ;;
-    #--addShareNode | -S) echo "$addShareNode";;
-    #-s) addShareNode "$@"; ;;
     --delFromAcct | -K) echo "$delFromAcct";;
     -k) delFromAcct "$@"; ;;
-    --addExclNode | -E) echo "$addExclNode";;
-    -e) addExclNode "$@"; ;;
     --delUser | -V) echo "$delUser";;
     -v) delUser "$@"; ;;
     --delAcct | -A) echo "$delAcct";;

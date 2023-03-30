@@ -1,4 +1,15 @@
-import { Logger } from "@ddadaal/tsgrpc-server";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Collection, Entity,
   IdentifiedReference, ManyToOne, OneToMany, OneToOne, PrimaryKey, Property,
 } from "@mikro-orm/core";
@@ -6,7 +17,6 @@ import { Decimal } from "@scow/lib-decimal";
 import { AccountWhitelist } from "src/entities/AccountWhitelist";
 import { Tenant } from "src/entities/Tenant";
 import { UserAccount } from "src/entities/UserAccount";
-import { ClusterPlugin } from "src/plugins/clusters";
 import { DECIMAL_DEFAULT_RAW, DecimalType } from "src/utils/decimal";
 import { EntityOrRef, toRef } from "src/utils/orm";
 
@@ -37,47 +47,6 @@ export class Account {
 
   @Property({ type: DecimalType, defaultRaw: DECIMAL_DEFAULT_RAW })
     balance: Decimal = new Decimal(0);
-
-  /**
-   * Blocks the account in the slurm.
-   * If it is whitelisted, it doesn't block.
-   * Call flush after this.
-   *
-   * @returns Operation result
-  **/
-  async block(clusterPlugin: ClusterPlugin["clusters"], logger: Logger):
-   Promise<"AlreadyBlocked" | "Whitelisted" | "OK"> {
-
-    if (this.blocked) { return "AlreadyBlocked"; }
-
-    if (this.whitelist) {
-      return "Whitelisted";
-    }
-
-    await clusterPlugin.callOnAll(logger, async (ops) => ops.account.blockAccount({
-      request: { accountName: this.accountName },
-      logger,
-    }));
-
-
-    this.blocked = true;
-    return "OK";
-  }
-
-  /**
-     * Call flush after this.
-     * */
-  async unblock(clusterPlugin: ClusterPlugin["clusters"], logger: Logger) {
-
-    if (!this.blocked) { return; }
-
-    await clusterPlugin.callOnAll(logger, async (ops) => ops.account.unblockAccount({
-      request: { accountName: this.accountName },
-      logger,
-    }));
-
-    this.blocked = false;
-  }
 
   constructor(init: {
     accountName: string;

@@ -1,3 +1,15 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 syntax = "proto3";
 
 package scow.server;
@@ -19,7 +31,9 @@ message ChangeStorageQuotaRequest {
 
 // INVALID_ARGUMENT: change value is not valid.
 // NOT_FOUND: user_id or cluster is not found
-message ChangeStorageQuotaReply { uint64 current_quota = 1; }
+message ChangeStorageQuotaResponse {
+  uint64 current_quota = 1;
+}
 
 message QueryStorageQuotaRequest {
   string user_id = 1;
@@ -27,41 +41,89 @@ message QueryStorageQuotaRequest {
 }
 
 // NOT_FOUND: cluster or userId is not found.
-message QueryStorageQuotaReply { uint64 current_quota = 1; }
+message QueryStorageQuotaResponse {
+  uint64 current_quota = 1;
+}
+
+message ImportUsersData {
+  message AccountInfo {
+    string account_name = 1;
+    repeated UserInAccount users = 2;
+    string owner = 3;
+  }
+
+  repeated AccountInfo accounts = 1;
+}
 
 message ImportUsersRequest {
-  string data = 1;
+  ImportUsersData data = 1;
   bool whitelist = 2;
 }
 
 // INVAD_ARGUMENT: the data format is not acceptable
-message ImportUsersReply {
+message ImportUsersResponse {
   uint32 user_count = 1;
   uint32 account_count = 2;
   uint32 users_without_name = 3;
 }
 
-message GetFetchInfoRequest {}
+message UserInAccount {
+  string user_id = 1;
+  string user_name = 2;
+  string state = 3;
+}
 
-message GetFetchInfoReply {
+message ClusterAccountInfo {
+  string account_name = 1;
+  repeated UserInAccount users = 2;
+  optional string owner = 3;
+  bool included = 4;
+}
+
+message GetClusterUsersRequest {
+  string cluster = 1;
+}
+
+message GetClusterUsersResponse {
+  repeated ClusterAccountInfo accounts = 1;
+}
+
+message GetFetchInfoRequest {
+}
+
+message GetFetchInfoResponse {
   bool fetch_started = 1;
   string schedule = 2;
   optional google.protobuf.Timestamp last_fetch_time = 3;
 }
 
-message SetFetchStateRequest { bool started = 1; }
-message SetFetchStateReply {}
+message SetFetchStateRequest {
+  bool started = 1;
+}
+message SetFetchStateResponse {
+}
 
-message FetchJobsRequest {}
-message FetchJobsReply { uint32 new_jobs_count = 1; }
+message FetchJobsRequest {
+}
+message FetchJobsResponse {
+  uint32 new_jobs_count = 1;
+}
+
+message UpdateBlockStatusRequest{
+}
+message UpdateBlockStatusResponse{
+}
 
 service AdminService {
   rpc ChangeStorageQuota(ChangeStorageQuotaRequest)
-      returns (ChangeStorageQuotaReply);
+      returns (ChangeStorageQuotaResponse);
   rpc QueryStorageQuota(QueryStorageQuotaRequest)
-      returns (QueryStorageQuotaReply);
-  rpc ImportUsers(ImportUsersRequest) returns (ImportUsersReply);
-  rpc GetFetchInfo(GetFetchInfoRequest) returns (GetFetchInfoReply);
-  rpc SetFetchState(SetFetchStateRequest) returns (SetFetchStateReply);
-  rpc FetchJobs(FetchJobsRequest) returns (FetchJobsReply);
+      returns (QueryStorageQuotaResponse);
+  rpc ImportUsers(ImportUsersRequest) returns (ImportUsersResponse);
+  rpc GetClusterUsers(GetClusterUsersRequest) returns (GetClusterUsersResponse);
+  rpc GetFetchInfo(GetFetchInfoRequest) returns (GetFetchInfoResponse);
+  rpc SetFetchState(SetFetchStateRequest) returns (SetFetchStateResponse);
+  rpc FetchJobs(FetchJobsRequest) returns (FetchJobsResponse);
+  rpc UpdateBlockStatus(UpdateBlockStatusRequest)
+    returns (UpdateBlockStatusResponse);
 }

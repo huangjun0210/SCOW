@@ -1,0 +1,54 @@
+id: vscode
+name: VSCode
+type: web
+
+slurm:
+  options:
+    - "-x node[1-2]"
+
+web:
+  proxyType: relative
+  beforeScript: |
+    export PORT=$(get_port)
+    export PASSWORD=$(get_password 12)
+  script: |
+    PASSWORD=$PASSWORD code-server -vvv --bind-addr 0.0.0.0:$PORT --auth password
+  connect:
+    method: POST
+    path: /login
+    formData:
+      password: "{PASSWORD}"
+
+attributes:
+  - type: text
+    name: version
+    label: 版本
+    required: false
+    defaultValue: a version
+    placeholder: aaa
+  - type: text
+    name: version2
+    label: 版本
+    defaultValue: 123
+    required: false
+  - type: number
+    name: version3
+    label: 版本
+    defaultValue: 456
+    required: false
+  - type: number
+    name: version4
+    label: 版本
+    required: false
+  - type: select
+    name: version5
+    label: 版本
+    select:
+      - value: code-server/4.8.0
+        label: version 4.8.0
+      - value: code-server/4.9.0
+        label: version 4.9.0
+
+
+
+

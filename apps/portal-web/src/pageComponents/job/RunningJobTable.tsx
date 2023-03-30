@@ -1,14 +1,28 @@
-import { Button, Form, InputNumber, message, Popconfirm, Space, Table } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { App, Button, Form, InputNumber, Popconfirm, Space, Table } from "antd";
 import Router from "next/router";
 import { join } from "path";
 import React, { useCallback, useMemo, useState } from "react";
 import { useAsync } from "react-async";
+import { useStore } from "simstate";
 import { api } from "src/apis";
 import { SingleClusterSelector } from "src/components/ClusterSelector";
 import { FilterFormContainer } from "src/components/FilterFormContainer";
 import { runningJobId, RunningJobInfo } from "src/models/job";
 import { RunningJobDrawer } from "src/pageComponents/job/RunningJobDrawer";
-import { Cluster, clusterConfigToCluster, publicConfig } from "src/utils/config";
+import { DefaultClusterStore } from "src/stores/DefaultClusterStore";
+import { Cluster } from "src/utils/config";
 
 interface FilterForm {
   jobId: number | undefined;
@@ -26,10 +40,12 @@ export const RunningJobQueryTable: React.FC<Props> = ({
   userId,
 }) => {
 
+  const defaultClusterStore = useStore(DefaultClusterStore);
+
   const [query, setQuery] = useState<FilterForm>(() => {
     return {
       jobId: undefined,
-      cluster: publicConfig.CLUSTERS[0],
+      cluster: defaultClusterStore.cluster,
     };
   });
 
@@ -52,7 +68,7 @@ export const RunningJobQueryTable: React.FC<Props> = ({
       filtered = filtered.filter((x) => x.jobId === query.jobId + "");
     }
 
-    return filtered.map((x) => RunningJobInfo.fromGrpc(x, clusterConfigToCluster(query.cluster.id)!));
+    return filtered.map((x) => RunningJobInfo.fromGrpc(x, query.cluster));
   }, [data, query.jobId]);
 
   return (
@@ -64,7 +80,7 @@ export const RunningJobQueryTable: React.FC<Props> = ({
           initialValues={query}
           onFinish={async () => {
             setQuery({
-              ...await form.validateFields(),
+              ...(await form.validateFields()),
             });
           }}
         >
@@ -76,6 +92,9 @@ export const RunningJobQueryTable: React.FC<Props> = ({
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit">搜索</Button>
+          </Form.Item>
+          <Form.Item>
+            <Button loading={isLoading} onClick={reload}>刷新</Button>
           </Form.Item>
         </Form>
       </FilterFormContainer>
@@ -104,6 +123,9 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
   data, isLoading, showAccount, showCluster, showUser, reload,
 }) => {
 
+  const { message } = App.useApp();
+
+
   const [previewItem, setPreviewItem] = useState<RunningJobInfo | undefined>(undefined);
 
   return (
@@ -117,12 +139,16 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
       >
         {
           showCluster && (
-            <Table.Column<RunningJobInfo> dataIndex="cluster" title="集群"
+            <Table.Column<RunningJobInfo>
+              dataIndex="cluster"
+              title="集群"
               render={(_, r) => r.cluster.name}
             />
           )
         }
-        <Table.Column<RunningJobInfo> dataIndex="jobId" title="作业ID"
+        <Table.Column<RunningJobInfo>
+          dataIndex="jobId"
+          title="作业ID"
           sorter={(a, b) => a.jobId.localeCompare(b.jobId)}
         />
         {
@@ -141,14 +167,18 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
         <Table.Column<RunningJobInfo> dataIndex="nodes" title="节点数" />
         <Table.Column<RunningJobInfo> dataIndex="cores" title="核心数" />
         <Table.Column<RunningJobInfo> dataIndex="state" title="状态" />
-        <Table.Column<RunningJobInfo> dataIndex="runningOrQueueTime"
+        <Table.Column
+          dataIndex="runningOrQueueTime"
           title="运行/排队时间"
         />
-        <Table.Column<RunningJobInfo> dataIndex="nodesOrReason" title="说明"
+        <Table.Column<RunningJobInfo>
+          dataIndex="nodesOrReason"
+          title="说明"
           render={(d: string) => d.startsWith("(") && d.endsWith(")") ? d.substring(1, d.length - 1) : d}
         />
         <Table.Column<RunningJobInfo> dataIndex="timeLimit" title="作业时间限制" />
-        <Table.Column<RunningJobInfo> title="更多"
+        <Table.Column<RunningJobInfo>
+          title="更多"
           render={(_, r) => (
             <Space>
               <a onClick={() => Router.push(join("/files", r.cluster.id, r.workingDir))}>
@@ -174,8 +204,10 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
           )}
         />
       </Table>
-      <RunningJobDrawer show={previewItem !== undefined}
-        item={previewItem} onClose={() => setPreviewItem(undefined)}
+      <RunningJobDrawer
+        open={previewItem !== undefined}
+        item={previewItem}
+        onClose={() => setPreviewItem(undefined)}
       />
     </>
   );

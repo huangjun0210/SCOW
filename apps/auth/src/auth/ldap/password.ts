@@ -1,11 +1,23 @@
 /**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+/**
  * References
  * https://datatracker.ietf.org/doc/html/rfc3062
  * https://stackoverflow.com/questions/65745679/how-do-i-pass-parameters-to-the-ldapjs-exop-function
  */
 
 import { BerWriter } from "asn1";
-import { FastifyLoggerInstance } from "fastify";
+import { FastifyBaseLogger } from "fastify";
 import ldapjs from "ldapjs";
 import { useLdap } from "src/auth/ldap/helpers";
 import { LdapConfigSchema } from "src/config/auth";
@@ -43,10 +55,10 @@ export async function modifyPassword(
 }
 
 export async function modifyPasswordAsSelf(
-  log: FastifyLoggerInstance,
+  log: FastifyBaseLogger,
   ldap: LdapConfigSchema,
   userDn: string, oldPassword: string, newPassword: string,
-) : Promise<boolean> {
+): Promise<boolean> {
   try {
     return await useLdap(log, ldap, { dn: userDn, password: oldPassword })(async (client) => {
       await modifyPassword(userDn, oldPassword, newPassword, client);

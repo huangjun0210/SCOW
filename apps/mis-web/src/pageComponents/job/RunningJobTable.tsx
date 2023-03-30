@@ -1,6 +1,20 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { useDidUpdateEffect } from "@scow/lib-web/build/utils/hooks";
 import { Button, Form, Input, InputNumber, Select, Space, Table } from "antd";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useAsync } from "react-async";
+import { useStore } from "simstate";
 import { api } from "src/apis";
 import { SingleClusterSelector } from "src/components/ClusterSelector";
 import { FilterFormContainer, FilterFormTabs } from "src/components/FilterFormContainer";
@@ -10,8 +24,8 @@ import { runningJobId, RunningJobInfo } from "src/models/job";
 import { BatchChangeJobTimeLimitButton } from "src/pageComponents/job/BatchChangeJobTimeLimitButton";
 import { ChangeJobTimeLimitModal } from "src/pageComponents/job/ChangeJobTimeLimitModal";
 import { RunningJobDrawer } from "src/pageComponents/job/RunningJobDrawer";
+import { DefaultClusterStore } from "src/stores/DefaultClusterStore";
 import { Cluster, publicConfig } from "src/utils/config";
-import { useDidUpdateEffect } from "src/utils/hooks";
 
 interface FilterForm {
   jobId: number | undefined;
@@ -35,16 +49,21 @@ export const RunningJobQueryTable: React.FC<Props> = ({
 
   const [selected, setSelected] = useState<RunningJobInfo[]>([]);
 
+  const defaultClusterStore = useStore(DefaultClusterStore);
+
   const [query, setQuery] = useState<FilterForm>(() => {
     return {
       accountName: typeof accountNames === "string" ? accountNames : undefined,
       jobId: undefined,
-      cluster: Object.values(publicConfig.CLUSTERS)[0],
+      cluster: defaultClusterStore.cluster,
     };
   });
 
   useDidUpdateEffect(() => {
-    setQuery((q) => ({ ...q, accountName: accountNames ? accountNames[0] : undefined }));
+    setQuery((q) => ({
+      ...q,
+      accountName: Array.isArray(accountNames) ? accountNames[0] : accountNames ? accountNames : undefined,
+    }));
   }, [accountNames]);
 
   const [form] = Form.useForm<FilterForm>();
@@ -63,7 +82,7 @@ export const RunningJobQueryTable: React.FC<Props> = ({
     if (!data) { return undefined; }
 
     let filtered = data.results;
-    if (searchType.current === "precision") {
+    if (searchType.current === "precision" && query.jobId) {
       filtered = filtered.filter((x) => x.jobId === query.jobId + "");
     } else {
       // add local range filters here
@@ -75,11 +94,13 @@ export const RunningJobQueryTable: React.FC<Props> = ({
   return (
     <div>
       <FilterFormContainer>
-        <Form<FilterForm> form={form} initialValues={query}
+        <Form
+          form={form}
+          initialValues={query}
           onFinish={async () => {
             setQuery({
               accountName: query.accountName,
-              ...await form.validateFields(),
+              ...(await form.validateFields()),
             });
           }}
         >
@@ -87,12 +108,13 @@ export const RunningJobQueryTable: React.FC<Props> = ({
             onChange={(key: "range" | "precision") => {
               searchType.current = key;
             }}
-            button={
+            button={(
               <Space>
                 <Button type="primary" htmlType="submit">搜索</Button>
-                <Button onClick={reload} disabled={isLoading}>刷新</Button>
+                <Button onClick={reload} loading={isLoading}>刷新</Button>
               </Space>
-            } tabs={[
+            )}
+            tabs={[
               {
                 title: "批量搜索",
                 key: "range",
@@ -214,7 +236,9 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
       >
         {
           showCluster && (
-            <Table.Column<RunningJobInfo> dataIndex="cluster" title="集群"
+            <Table.Column<RunningJobInfo>
+              dataIndex="cluster"
+              title="集群"
               render={(_, r) => r.cluster.name}
             />
           )
@@ -236,15 +260,19 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
         <Table.Column<RunningJobInfo> dataIndex="nodes" title="节点数" />
         <Table.Column<RunningJobInfo> dataIndex="cores" title="核心数" />
         <Table.Column<RunningJobInfo> dataIndex="state" title="状态" />
-        <Table.Column<RunningJobInfo> dataIndex="runningOrQueueTime"
+        <Table.Column
+          dataIndex="runningOrQueueTime"
           title="运行/排队时间"
         />
-        <Table.Column<RunningJobInfo> dataIndex="nodesOrReason" title="说明"
+        <Table.Column
+          dataIndex="nodesOrReason"
+          title="说明"
           render={(d: string) => d.startsWith("(") && d.endsWith(")") ? d.substring(1, d.length - 1) : d}
         />
         <Table.Column<RunningJobInfo> dataIndex="timeLimit" title="作业时间限制" />
 
-        <Table.Column<RunningJobInfo> title="更多"
+        <Table.Column<RunningJobInfo>
+          title="更多"
           render={(_, r) => (
             <Space>
               <a onClick={() => setPreviewItem(r)}>详情</a>
@@ -258,8 +286,10 @@ export const RunningJobInfoTable: React.FC<JobInfoTableProps> = ({
           )}
         />
       </Table>
-      <RunningJobDrawer show={previewItem !== undefined}
-        item={previewItem} onClose={() => setPreviewItem(undefined)}
+      <RunningJobDrawer
+        open={previewItem !== undefined}
+        item={previewItem}
+        onClose={() => setPreviewItem(undefined)}
       />
     </>
   );

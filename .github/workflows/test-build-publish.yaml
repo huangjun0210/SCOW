@@ -5,28 +5,47 @@ on:
   pull_request:
     branches: [master]
   push:
+    tags:
+      - "**"
     branches:
       - master
 
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
 env:
   GITHUB_CR: ghcr.io
-  ALIYUN_CR: registry.cn-hangzhou.aliyuncs.com
-  ALIYUN_PROJECT_NAME: scow
+  # ALIYUN_CR: registry.cn-hangzhou.aliyuncs.com
+  # ALIYUN_PROJECT_NAME: scow
 
 jobs:
-  test:
-    name: Test
+  test-version-packages:
+    name: Test and version packages
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v3
 
-      - uses: pnpm/action-setup@v2.2.2
+      - uses: pnpm/action-setup@v2.2.4
 
       - uses: actions/setup-node@v3
         with:
-          node-version: 16.x
+          node-version: 18.x
           cache: pnpm
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.11.0"
+          github_token: ${{ github.token }}
+
+      - name: Install dependencies
+        run: pnpm i --frozen-lockfile
+
+      - name: Lint code
+        run: pnpm lint
 
       - name: Generate SSH key pairs for test
         run: ssh-keygen -t rsa -q -f "$HOME/.ssh/id_rsa" -N ""
@@ -36,9 +55,6 @@ jobs:
 
       - name: Check running containers
         run: docker ps
-
-      - name: Install dependencies
-        run: pnpm i --frozen-lockfile
 
       - name: Prepare dev libs and code
         run: pnpm prepareDev
@@ -56,10 +72,21 @@ jobs:
       - name: Upload test converage
         uses: codecov/codecov-action@v3
         with:
-          files: ./libs/auth/coverage/lcov.info,./libs/config/coverage/lcov.info,./libs/decimal/coverage/lcov.info,./apps/portal-web/coverage/lcov.info,./apps/auth/coverage/lcov.info,./apps/mis-server/coverage/lcov.info
+          files: ./libs/auth/coverage/lcov.info,./libs/ssh/coverage/lcov.info,./libs/libconfig/coverage/lcov.info,./libs/decimal/coverage/lcov.info,./apps/auth/coverage/lcov.info,./apps/mis-server/coverage/lcov.info,./apps/portal-server/coverage/lcov.info
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        if: github.ref == 'refs/heads/master'
+        with:
+          version: pnpm ci:version
+          publish: pnpm ci:publish
+          createGithubReleases: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-images:
-    needs: test
+    needs: test-version-packages
     runs-on: ubuntu-latest
 
     permissions:
@@ -69,50 +96,29 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: gateway
-            file: gateway
+          - name: scow
+            file: scow
             build_args: ""
 
-          - name: mis-server
-            file: mis-server
-            build_args: ""
-
-          - name: auth
-            file: auth
-            build_args: ""
-
-          - name: mis-web-root
-            file: mis-web
-            build_args: BASE_PATH=
-
-          - name: mis-web-mis
-            file: mis-web
-            build_args: BASE_PATH=/mis
-
-          - name: portal-web-root
-            file: portal-web
-            build_args: BASE_PATH=
-
-          - name: portal-web-portal
-            file: portal-web
-            build_args: BASE_PATH=/portal
+          - name: docs
+            file: docs
+            build_args: BASE_PATH=/SCOW/
 
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Log in to the GitHub Container registry
-        uses: docker/login-action@21f251affc0769ccac8a1cf17e937592fb492337
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
         with:
           registry: ${{ env.GITHUB_CR }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to the Aliyun CR
-        uses: docker/login-action@21f251affc0769ccac8a1cf17e937592fb492337
-        with:
-          registry: ${{ env.ALIYUN_CR }}
-          username: ${{ secrets.ALIYUN_CR_USERNAME }}
-          password: ${{ secrets.ALIYUN_CR_PASSWORD }}
 
       - name: Docker meta
         id: meta
@@ -120,14 +126,15 @@ jobs:
         with:
           images: |
             ${{ env.GITHUB_CR }}/${{ github.repository }}/${{ matrix.name }}
-            ${{ env.ALIYUN_CR }}/${{ env.ALIYUN_PROJECT_NAME }}/${{ matrix.name }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           build-args: ${{ matrix.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
-          file: dockerfiles/Dockerfile.${{ matrix.file }}
+          file: docker/Dockerfile.${{ matrix.file }}
           labels: ${{ steps.meta.outputs.labels }}
+          # only build arm64 in master commits
+          platforms: linux/amd64${{ github.ref_type == 'tag' && ',linux/arm64' || '' }}

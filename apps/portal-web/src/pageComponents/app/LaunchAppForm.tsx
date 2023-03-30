@@ -1,14 +1,32 @@
-import { Button, Form, InputNumber, message, Select } from "antd";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { App, Button, Form, Input, InputNumber, Select } from "antd";
+import { Rule } from "antd/es/form";
 import Router from "next/router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAsync } from "react-async";
+import { useStore } from "simstate";
 import { api } from "src/apis";
 import { SingleClusterSelector } from "src/components/ClusterSelector";
 import { AccountSelector } from "src/pageComponents/job/AccountSelector";
-import { Cluster, publicConfig } from "src/utils/config";
-import { firstPartition, getPartitionInfo } from "src/utils/jobForm";
+import { AppCustomAttribute } from "src/pages/api/app/getAppMetadata";
+import { DefaultClusterStore } from "src/stores/DefaultClusterStore";
+import { Cluster } from "src/utils/config";
 
 interface Props {
   appId: string;
+  appName: string;
+  attributes: AppCustomAttribute[];
 }
 
 interface FormFields {
@@ -28,13 +46,22 @@ const initialValues = {
 } as Partial<FormFields>;
 
 
-export const LaunchAppForm: React.FC<Props> = ({ appId }) => {
+export const LaunchAppForm: React.FC<Props> = ({ appId, attributes }) => {
+
+  const { message } = App.useApp();
 
   const [form] = Form.useForm<FormFields>();
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async () => {
-    const { cluster, coreCount, partition, qos, account, maxTime } = await form.validateFields();
+    const allFormFields = await form.validateFields();
+    const { cluster, coreCount, partition, qos, account, maxTime } = allFormFields;
+
+    const customFormKeyValue: {[key: string]: string} = {};
+    attributes.forEach((customFormAttribute) => {
+      const customFormKey = customFormAttribute.name;
+      customFormKeyValue[customFormKey] = allFormFields[customFormKey];
+    });
 
     setLoading(true);
     await api.createAppSession({ body: {
@@ -45,6 +72,7 @@ export const LaunchAppForm: React.FC<Props> = ({ appId }) => {
       qos,
       account,
       maxTime,
+      customAttributes: customFormKeyValue,
     } })
       .then(() => {
         message.success("创建成功！");
@@ -57,64 +85,99 @@ export const LaunchAppForm: React.FC<Props> = ({ appId }) => {
   const cluster = Form.useWatch("cluster", form) as Cluster | undefined;
   const partition = Form.useWatch("partition", form) as string | undefined;
 
-  // set default
-  useEffect(() => {
-    const defaultCluster = publicConfig.CLUSTERS[0];
 
-    if (defaultCluster) {
-      const [partition, info] = firstPartition(defaultCluster);
-      form.setFieldsValue({
-        cluster: defaultCluster,
-        partition,
-        qos: info?.qos?.[0],
-      });
-    }
-  }, []);
+  const clusterInfoQuery = useAsync({
+    promiseFn: useCallback(async () => cluster
+      ? api.getClusterInfo({ query: { cluster:  cluster?.id } }) : undefined, [cluster]),
+    onResolve: (data) => {
+      if (data) {
+        const partition = data.clusterInfo.slurm.partitions[0];
+        form.setFieldValue("partition", partition.name);
+        form.setFieldValue("qos", partition.qos?.[0]);
+      }
+    },
+  });
 
-  // if partition is no longer available, use the first partition of the cluster
-  useEffect(() => {
-    if (!cluster) {
-      form.setFieldsValue({ partition: undefined });
-      return;
-    }
-    if (!getPartitionInfo(cluster, partition)) {
-      form.setFieldsValue({ partition: firstPartition(cluster)[0] });
-    }
-  }, [cluster, partition]);
-
-  const currentPartitionInfo = useMemo(
-    () => cluster ? getPartitionInfo(cluster, partition) : undefined,
-    [cluster, partition],
+  const currentPartitionInfo = useMemo(() =>
+    clusterInfoQuery.data
+      ? clusterInfoQuery.data.clusterInfo.slurm.partitions.find((x) => x.name === partition)
+      : undefined,
+  [clusterInfoQuery.data, partition],
   );
 
+  useEffect(() => {
+    if (currentPartitionInfo) {
+      form.setFieldValue("qos", currentPartitionInfo.qos?.[0]);
+    }
+  }, [currentPartitionInfo]);
+
+  const customFormItems = attributes.map((item, index) => {
+
+    const rules: Rule[] = item.type === "NUMBER"
+      ? [{ type: "integer" }, { required: item.required }]
+      : [{ required: item.required }];
+
+    const placeholder = item.placeholder ?? "";
+    const inputItem = item.type === "NUMBER" ? (<InputNumber placeholder={placeholder} />)
+      : item.type === "TEXT" ? (<Input placeholder={placeholder} />)
+        : (
+          <Select
+            options={item.select.map((x) => ({ label: x.label, value: x.value }))}
+            placeholder={placeholder}
+          />
+        );
+
+    return (
+      <Form.Item
+        key={`${item.name}+${index}`}
+        label={item.label}
+        name={item.name}
+        rules={rules}
+        initialValue={item.defaultValue}
+      >
+        {inputItem}
+      </Form.Item>
+    );
+  });
+
+  const defaultClusterStore = useStore(DefaultClusterStore);
+
   return (
-    <Form form={form} onFinish={onSubmit} initialValues={initialValues}>
+    <Form form={form} onFinish={onSubmit} initialValues={{ ...initialValues, cluster: defaultClusterStore.cluster }}>
 
       <Form.Item name="cluster" label="集群" rules={[{ required: true }]}>
         <SingleClusterSelector />
       </Form.Item>
 
-      <Form.Item label="账户" name="account"
-        rules={[{ required: true }]} dependencies={["cluster"]}
+      <Form.Item
+        label="账户"
+        name="account"
+        rules={[{ required: true }]}
+        dependencies={["cluster"]}
       >
         <AccountSelector cluster={cluster?.id} />
       </Form.Item>
 
-      <Form.Item<FormFields> label="分区" name="partition"
+      <Form.Item
+        label="分区"
+        name="partition"
         dependencies={["cluster"]}
         rules={[{ required: true }]}
       >
         <Select
+          loading={clusterInfoQuery.isLoading}
           disabled={!currentPartitionInfo}
-          options={cluster
-            ? Object.keys(publicConfig.CLUSTERS_CONFIG[cluster.id].slurm.partitions)
-              .map((x) => ({ label: x, value: x }))
+          options={clusterInfoQuery.data
+            ? clusterInfoQuery.data.clusterInfo.slurm.partitions
+              .map((x) => ({ label: x.name, value: x.name }))
             : []
           }
         />
       </Form.Item>
 
-      <Form.Item<FormFields> label="QOS" name="qos"
+      <Form.Item
+        label="QOS"
+        name="qos"
         dependencies={["cluster", "partition"]}
         rules={[{ required: true }]}
       >
@@ -124,7 +187,9 @@ export const LaunchAppForm: React.FC<Props> = ({ appId }) => {
         />
       </Form.Item>
 
-      <Form.Item<FormFields> label="CPU核心数" name="coreCount"
+      <Form.Item
+        label="CPU核心数"
+        name="coreCount"
         dependencies={["cluster", "partition"]}
         rules={[
           { required: true, type: "integer", max: currentPartitionInfo?.cores },
@@ -137,7 +202,7 @@ export const LaunchAppForm: React.FC<Props> = ({ appId }) => {
         <InputNumber min={1} step={1} addonAfter={"分钟"} />
       </Form.Item>
 
-
+      {customFormItems}
 
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={loading}>

@@ -1,10 +1,22 @@
+/**
+   * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+   * SCOW is licensed under Mulan PSL v2.
+   * You can use this software according to the terms and conditions of the Mulan PSL v2.
+   * You may obtain a copy of Mulan PSL v2 at:
+   *          http://license.coscl.org.cn/MulanPSL2
+   * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+   * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+   * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+   * See the Mulan PSL v2 for more details.
+*/
+
 syntax = "proto3";
 
 package scow.server;
 
-import "google/protobuf/timestamp.proto";
-import "common/money.proto";
 import "common/job.proto";
+import "common/money.proto";
+import "google/protobuf/timestamp.proto";
 
 message JobInfo {
   uint64 bi_job_index = 1;
@@ -44,6 +56,7 @@ message JobFilter {
   optional uint64 job_id = 6;
   // if length === 0, get from all clusters
   repeated string clusters = 7;
+  optional uint64 start_bi_job_index = 8;
 }
 
 message GetJobsRequest {
@@ -53,7 +66,7 @@ message GetJobsRequest {
   optional uint64 page_size = 3;
 }
 
-message GetJobsReply {
+message GetJobsResponse {
   uint64 total_count = 1;
   repeated JobInfo jobs = 2;
   common.Money total_account_price = 3;
@@ -70,12 +83,18 @@ message ChangeJobPriceRequest {
 }
 
 // NOT_FOUND: job is not found
-message ChangeJobPriceReply { uint64 count = 1; }
+message ChangeJobPriceResponse {
+  uint64 count = 1;
+}
 
-message GetJobByBiJobIndexRequest { string bi_job_index = 1; }
+message GetJobByBiJobIndexRequest {
+  string bi_job_index = 1;
+}
 
 // NOT_FOUND: job is not found
-message GetJobByBiJobIndexReply { JobInfo info = 1; }
+message GetJobByBiJobIndexResponse {
+  JobInfo info = 1;
+}
 
 message GetRunningJobsRequest {
   string cluster = 1;
@@ -87,7 +106,9 @@ message GetRunningJobsRequest {
   repeated string job_id_list = 5;
 }
 
-message GetRunningJobsReply { repeated common.job.RunningJob jobs = 1; }
+message GetRunningJobsResponse {
+  repeated common.RunningJob jobs = 1;
+}
 
 message ChangeJobTimeLimitRequest {
   string cluster = 1;
@@ -96,7 +117,7 @@ message ChangeJobTimeLimitRequest {
 }
 
 // NOT_FOUND: cluster or job_id is not found.
-message ChangeJobTimeLimitReply {}
+message ChangeJobTimeLimitResponse {}
 
 message QueryJobTimeLimitRequest {
   string cluster = 1;
@@ -106,7 +127,8 @@ message QueryJobTimeLimitRequest {
 message GetBillingItemsRequest {
   // if not specified, return default price items
   optional string tenant_name = 1;
-  // returns only active billing items
+  // if true, returns only active billing items
+  // if false, includes history_items
   bool active_only = 2;
 }
 
@@ -119,13 +141,18 @@ message JobBillingItem {
   string amount_strategy = 6;
 }
 
-message GetBillingItemsReply { repeated JobBillingItem items = 1; }
+message GetBillingItemsResponse {
+  repeated JobBillingItem active_items = 1;
+  repeated JobBillingItem history_items = 2;
+}
 
 // NOT_FOUND: cluster or job_id is not found.
-message QueryJobTimeLimitReply { uint64 limit = 1; }
+message QueryJobTimeLimitResponse {
+  uint64 limit = 1;
+}
 
 message AddBillingItemRequest {
-  // if not set, add as default item
+  // if not set, add as platform default item
   optional string tenant_name = 1;
   string item_id = 2;
   common.Money price = 3;
@@ -134,25 +161,30 @@ message AddBillingItemRequest {
   optional string description = 6;
 }
 
-message AddBillingItemReply {}
+message AddBillingItemResponse {}
+
+message GetMissingDefaultPriceItemsRequest {}
+
+message GetMissingDefaultPriceItemsResponse {
+  repeated string items = 1;
+}
 
 service JobService {
-  rpc GetJobs(GetJobsRequest) returns (GetJobsReply);
-  rpc GetJobByBiJobIndex(GetJobByBiJobIndexRequest)
-      returns (GetJobByBiJobIndexReply);
-  rpc ChangeJobPrice(ChangeJobPriceRequest) returns (ChangeJobPriceReply);
+  rpc GetJobs(GetJobsRequest) returns (GetJobsResponse);
+  rpc GetJobByBiJobIndex(GetJobByBiJobIndexRequest) returns (GetJobByBiJobIndexResponse);
+  rpc ChangeJobPrice(ChangeJobPriceRequest) returns (ChangeJobPriceResponse);
 
-  rpc GetRunningJobs(GetRunningJobsRequest) returns (GetRunningJobsReply);
+  rpc GetRunningJobs(GetRunningJobsRequest) returns (GetRunningJobsResponse);
 
-  rpc ChangeJobTimeLimit(ChangeJobTimeLimitRequest)
-      returns (ChangeJobTimeLimitReply);
-  rpc QueryJobTimeLimit(QueryJobTimeLimitRequest)
-      returns (QueryJobTimeLimitReply);
+  rpc ChangeJobTimeLimit(ChangeJobTimeLimitRequest) returns (ChangeJobTimeLimitResponse);
+  rpc QueryJobTimeLimit(QueryJobTimeLimitRequest) returns (QueryJobTimeLimitResponse);
 
-  rpc GetBillingItems(GetBillingItemsRequest) returns (GetBillingItemsReply);
+  rpc GetBillingItems(GetBillingItemsRequest) returns (GetBillingItemsResponse);
 
   // ALREADY_EXISTS: item_id already exists
   // NOT_FOUND: tenant_name is not found
   // INVALID_ARGUMENT: amount is not valid or path is not valid
-  rpc AddBillingItem(AddBillingItemRequest) returns (AddBillingItemReply);
+  rpc AddBillingItem(AddBillingItemRequest) returns (AddBillingItemResponse);
+
+  rpc GetMissingDefaultPriceItems(GetMissingDefaultPriceItemsRequest) returns (GetMissingDefaultPriceItemsResponse);
 }

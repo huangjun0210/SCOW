@@ -1,43 +1,63 @@
-import { Button, Form, message, Popconfirm, Space, Table, TableColumnsType } from "antd";
-import Router from "next/router";
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+import { compareDateTime, formatDateTime } from "@scow/lib-web/build/utils/datetime";
+import { compareNumber } from "@scow/lib-web/build/utils/math";
+import { queryToString } from "@scow/lib-web/build/utils/querystring";
+import type { AppSession } from "@scow/protos/build/portal/app";
+import { App, Button, Checkbox, Form, Popconfirm, Space, Table, TableColumnsType } from "antd";
+import type { CheckboxChangeEvent } from "antd/es/checkbox";
+import Router, { useRouter } from "next/router";
 import { join } from "path";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAsync } from "react-async";
+import { useStore } from "simstate";
 import { api } from "src/apis";
-import { AppSession } from "src/clusterops/api/app";
 import { SingleClusterSelector } from "src/components/ClusterSelector";
 import { FilterFormContainer } from "src/components/FilterFormContainer";
+import { calculateAppRemainingTime, compareState } from "src/models/job";
 import { ConnectTopAppLink } from "src/pageComponents/app/ConnectToAppLink";
-import { Cluster, publicConfig } from "src/utils/config";
-import { compareDateTime, formatDateTime } from "src/utils/datetime";
-import { compareNumber } from "src/utils/math";
+import { AppsStore } from "src/stores/AppsStore";
+import { DefaultClusterStore } from "src/stores/DefaultClusterStore";
+import { publicConfig } from "src/utils/config";
 
 interface Props {
 }
 
-interface FilterForm {
-  cluster: Cluster;
-}
-
-
 export const AppSessionsTable: React.FC<Props> = () => {
 
-  const [form] = Form.useForm<FilterForm>();
+  const apps = useStore(AppsStore);
 
-  const [query, setQuery] = useState<FilterForm>(() => {
-    return {
-      cluster: publicConfig.CLUSTERS[0],
-    };
-  });
+  const { message } = App.useApp();
+
+  const router = useRouter();
+
+  const clusterQuery = queryToString(router.query.cluster);
+
+  const defaultClusterStore = useStore(DefaultClusterStore);
+
+  const cluster = publicConfig.CLUSTERS.find((x) => x.id === clusterQuery) ?? defaultClusterStore.cluster;
 
   const { data, isLoading, reload } = useAsync({
     promiseFn: useCallback(async () => {
       // List all desktop
-      const { sessions } = await api.getAppSessions({ query: { cluster: query.cluster.id } });
+      const { sessions } = await api.getAppSessions({ query: { cluster: cluster.id } });
 
-      return sessions;
+      return sessions.map((x) => ({
+        ...x,
+        remainingTime: x.ready ? calculateAppRemainingTime(x.runningTime, x.timeLimit) : x.timeLimit,
+      }));
 
-    }, []),
+    }, [cluster]),
   });
 
   const columns: TableColumnsType<AppSession> = [
@@ -49,22 +69,30 @@ export const AppSessionsTable: React.FC<Props> = () => {
       title: "作业ID",
       dataIndex: "jobId",
       sorter: (a, b) => compareNumber(a.jobId, b.jobId),
-      defaultSortOrder: "descend",
     },
     {
       title: "应用",
       dataIndex: "appId",
-      render: (appId: string) => publicConfig.APPS.find((x) => x.id === appId)?.name ?? appId,
+      render: (appId: string) => apps.find((x) => x.id === appId)?.name ?? appId,
+      sorter: (a, b) => (!a.submitTime || !b.submitTime) ? -1 : compareDateTime(a.submitTime, b.submitTime),
     },
     {
       title: "提交时间",
       dataIndex: "submitTime",
       render: (_, record) => record.submitTime ? formatDateTime(record.submitTime) : "",
-      sorter: (a, b) => (!a.submitTime || !b.submitTime) ? -1 : compareDateTime(a.submitTime, b.submitTime),
     },
     {
       title: "状态",
       dataIndex: "state",
+      sorter: (a, b) => compareState (a.state, b.state)
+        ? compareState (a.state, b.state) :
+        compareNumber(a.jobId, b.jobId),
+      defaultSortOrder: "descend",
+
+    },
+    {
+      title: "剩余时间",
+      dataIndex: "remainingTime",
     },
 
     {
@@ -78,13 +106,13 @@ export const AppSessionsTable: React.FC<Props> = () => {
               <>
                 <ConnectTopAppLink
                   session={record}
-                  cluster={query.cluster}
+                  cluster={cluster}
                 />
                 <Popconfirm
                   title="确定结束这个任务吗？"
                   onConfirm={async () =>
                     api.cancelJob({ body: {
-                      cluster: query.cluster.id,
+                      cluster: cluster.id,
                       jobId: record.jobId,
                     } })
                       .then(() => {
@@ -99,7 +127,7 @@ export const AppSessionsTable: React.FC<Props> = () => {
             ) : undefined
           }
           <a onClick={() => {
-            Router.push(join("/files", query.cluster.id, record.dataPath));
+            Router.push(join("/files", cluster.id, record.dataPath));
           }}
           >
             进入目录
@@ -108,28 +136,48 @@ export const AppSessionsTable: React.FC<Props> = () => {
       ),
     },
   ];
+
+  const [checked, setChecked] = useState(true);
+  const [disabled] = useState(false);
+
+  const onChange = (e: CheckboxChangeEvent) => {
+    setChecked(e.target.checked);
+  };
+
+  useEffect(() => {
+    if (checked) {
+      const interval = setInterval(() => {
+        reload();
+      }, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [reload, checked]);
+
   return (
     <div>
       <FilterFormContainer>
-        <Form<FilterForm>
-          layout="inline"
-          form={form}
-          initialValues={query}
-          onFinish={async () => {
-            setQuery({
-              ...await form.validateFields(),
-            });
-          }}
-        >
-          <Form.Item label="集群" name="cluster">
-            <SingleClusterSelector />
+        <Form layout="inline">
+          <Form.Item label="集群">
+            <SingleClusterSelector
+              value={cluster}
+              onChange={(cluster) => {
+                router.push({ pathname: router.pathname, query: { cluster: cluster.id } });
+              }}
+            />
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit">搜索</Button>
               <Button loading={isLoading} onClick={reload}>刷新</Button>
             </Space>
           </Form.Item>
+          <Checkbox
+            checked={checked}
+            disabled={disabled}
+            onChange={onChange}
+            style={{ lineHeight: "40px", marginLeft: "10px" }}
+          >
+            10s自动刷新
+          </Checkbox>
         </Form>
       </FilterFormContainer>
       <Table

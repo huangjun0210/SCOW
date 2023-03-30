@@ -1,8 +1,27 @@
+/**
+ * Copyright (c) 2022 Peking University and Peking University Institute for Computing and Digital Economy
+ * SCOW is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 import { Entity, Index, PrimaryKey, Property } from "@mikro-orm/core";
 import { Decimal } from "@scow/lib-decimal";
+import { clusterNameToScowClusterId } from "src/config/clusters";
 import type { OriginalJob } from "src/entities/OriginalJob";
-import { UNKNOWN_PRICE_ITEM } from "src/utils/constants";
 import { DECIMAL_DEFAULT_RAW, DecimalType } from "src/utils/decimal";
+
+const UNKNOWN_PRICE_ITEM = "UNKNOWN";
+
+export interface JobPriceInfo {
+  tenant: { billingItemId: string; price: Decimal; } | undefined;
+  account: { billingItemId: string; price: Decimal; } | undefined;
+}
 
 @Entity()
 export class JobInfo {
@@ -13,21 +32,22 @@ export class JobInfo {
   @Property({ index: "idJob" })
     idJob!: number;
 
-  @Property({ length: 20, comment: "账户", index: "account" })
+  @Property({ length: 255, comment: "账户", index: "account" })
     account!: string;
 
-  @Property({ length: 20, comment: "用户名", index: "user" })
+  @Property({ length: 127, comment: "用户名", index: "user" })
     user!: string;
 
   @Property({ length: 255, columnType: "tinytext", comment: "分区" })
     partition!: string;
 
-  @Property({ columnType: "text", length: 65535, comment: "使用节点列表" })
+  @Property({ columnType: "text", comment: "使用节点列表" })
     nodelist!: string;
 
   @Property({ length: 255, columnType: "tinytext", comment: "作业名" })
     jobName!: string;
 
+  // 这里存的是scow中的集群名
   @Property({ length: 50, comment: "集群名" })
     cluster!: string;
 
@@ -99,23 +119,20 @@ export class JobInfo {
 
   constructor(
     job: OriginalJob,
-    tenant: string,
-    tenantPrice: Decimal,
-    tenantBillingItemId: string,
-    accountPrice: Decimal,
-    accountBillingItemId: string,
+    tenant: string | undefined,
+    jobPriceInfo: JobPriceInfo,
   ) {
     this.biJobIndex = job.biJobIndex;
     this.idJob = job.idJob;
 
     this.account = job.account;
-    this.tenant = tenant;
+    this.tenant = tenant ?? "";
 
     this.user = job.user;
     this.partition = job.partition;
     this.nodelist = job.nodelist;
     this.jobName = job.jobName;
-    this.cluster = job.cluster;
+    this.cluster = clusterNameToScowClusterId(job.cluster);
     this.gpu = job.gpu;
     this.cpusReq = job.cpusReq;
     this.memReq = job.memReq;
@@ -128,10 +145,10 @@ export class JobInfo {
     this.timeWait = job.timeWait;
     this.qos = job.qos;
 
-    this.tenantPrice = tenantPrice;
-    this.tenantBillingItemId = tenantBillingItemId;
-    this.accountPrice = accountPrice;
-    this.accountBillingItemId = accountBillingItemId;
+    this.tenantPrice = jobPriceInfo.tenant?.price ?? new Decimal(0);
+    this.tenantBillingItemId = jobPriceInfo.tenant?.billingItemId ?? UNKNOWN_PRICE_ITEM;
+    this.accountPrice = jobPriceInfo.account?.price ?? new Decimal(0);
+    this.accountBillingItemId = jobPriceInfo.tenant?.billingItemId ?? UNKNOWN_PRICE_ITEM;
 
     this.recordTime = job.recordTime;
     this.timeSubmit = job.timeSubmit;

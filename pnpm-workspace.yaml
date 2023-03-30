@@ -2,5 +2,6 @@ packages:
   - libs/**
   - apps/**
   - docs
-  - '!apps/portal-web/public/vnc'
-
+  - "!**/.next"
+  - protos
+  - deploy/**

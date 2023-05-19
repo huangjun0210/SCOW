@@ -57,6 +57,8 @@ export const job: JobInfo = {
   elapsed: "00:00:00",
   reason: "None",
   submitTime: "2022-07-07T09:21:42",
+  startTime: "2022-07-07T09:21:42",
+  endTime: "2022-07-07T09:21:52",
 };
 
 export const mockApi: MockApi<typeof api> = {
@@ -67,9 +69,15 @@ export const mockApi: MockApi<typeof api> = {
       partitions: [
         { cores: 123, name: "123", nodes: 123, qos: ["123"], gpus: 10, mem: 1000 },
         { cores: 1234, name: cluster, nodes: 1234, qos: ["1234"], gpus: 10, mem: 1000 },
+        { name : "compute", mem: 2048, cores:2, gpus:0, nodes: 1, qos: ["normal"], comment: "两个计算节点分区" },
+        { name : "GPU", mem: 2048, cores:2, gpus:2, nodes: 1, qos: ["normal"], comment: "GPU" },
       ],
     },
   } }),
+
+  checkAppConnectivity: async () => ({
+    ok: Math.random() < 0.5,
+  }),
 
   getAllJobs: async () => ({ results: [job]}),
 
@@ -102,14 +110,14 @@ export const mockApi: MockApi<typeof api> = {
   }),
 
   getAppSessions: async () => ({ sessions: [
-    { jobId: 100, sessionId: "123", appId: "vscode", state: "PENDING",
-      submitTime: new Date().toISOString(), ready: false, dataPath: "/test",
+    { jobId: 100, sessionId: "123", appId: "vscode", state: "PENDING", reason: "resource",
+      submitTime: new Date().toISOString(), host: "192.168.88.100", port: 1000, dataPath: "/test",
       timeLimit: "01:00:00", runningTime: "" },
     { jobId: 101, sessionId: "124", appId: "vscode", state: "RUNNING",
-      submitTime: new Date().toISOString(), ready: true, dataPath: "/test",
+      submitTime: new Date().toISOString(), dataPath: "/test",
       timeLimit: "1-01:00:00", runningTime: "01:50" },
     { jobId: 102, sessionId: "125", appId: "vscode", state: "RUNNING",
-      submitTime: new Date().toISOString(), ready: true, dataPath: "/test",
+      submitTime: new Date().toISOString(), host: "192.168.88.100", port: 10000, dataPath: "/test",
       timeLimit: "INVALID", runningTime: "01:55" },
   ]}),
 
@@ -156,6 +164,8 @@ export const mockApi: MockApi<typeof api> = {
       nodeCount: 4,
       partition: "low",
       qos: "low",
+      output: "job.%j.out",
+      errorOutput: "job.%j.err",
       workingDirectory: "/nfs/jobs/123",
     },
   }),
@@ -196,6 +206,22 @@ export const mockApi: MockApi<typeof api> = {
   getRunningJobs: async () => ({ results: [runningJob]}),
 
   submitJob: async () => ({ jobId: 10 }),
+
+  getAppLastSubmission: async () => ({
+    lastSubmissionInfo: {
+      userId: "test123",
+      cluster: "hpc01",
+      appId: "vscode",
+      appName: "VSCode",
+      account: "a_aaaaaa",
+      partition: "compute",
+      qos: "high",
+      coreCount: 2,
+      maxTime: 10,
+      submitTime: "2021-12-22T16:16:02",
+      customAttributes: { selectVersion: "code-server/4.9.0", sbatchOptions: "--time 10" },
+    },
+  }),
 
 };
 

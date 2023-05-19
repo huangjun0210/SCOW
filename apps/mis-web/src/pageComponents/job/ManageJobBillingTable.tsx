@@ -26,6 +26,7 @@ interface Props {
   data?: {
     activeItems: BillingItemType[],
     historyItems: BillingItemType[],
+    nextId: string,
   };
   loading?: boolean;
   tenant?: string;
@@ -45,25 +46,7 @@ export interface BillingItemType {
   }
 }
 
-const calculateNextId = (data?: BillingItemType[], tenant?: string) => {
-  const currentItemIds = data 
-    ? data.filter((x) => x.priceItem && x.tenantName === tenant).map((x) => x.priceItem!.itemId) : [];
-  if (!tenant) {
-    const nums = currentItemIds.map((x) => parseInt(x)).filter((x) => !isNaN(x));
-    return (nums.length === 0 ? 1 : Math.max(...nums) + 1).toString();
-  }
-  else {
-    const flag = tenant + "_";
-    const nums = currentItemIds
-      .filter((x) => x.startsWith(flag))
-      .map((x) => parseInt(x.replace(flag, "")))
-      .filter((x) => !isNaN(x));
-    return tenant + "_" + (nums.length === 0 ? 1 : Math.max(...nums) + 1);
-  }
-};
-
 export const ManageJobBillingTable: React.FC<Props> = ({ data, loading, tenant, reload }) => {
-  const nextId = calculateNextId(data?.activeItems, tenant);
 
   return (
     <Table
@@ -151,7 +134,7 @@ export const ManageJobBillingTable: React.FC<Props> = ({ data, loading, tenant, 
         dataIndex={["priceItem", "amountStrategy"]}
         render={(value) => {
           return (
-            value ? 
+            value ?
               (
                 <Space>
                   {AmountStrategyDescriptions[value]}
@@ -163,8 +146,8 @@ export const ManageJobBillingTable: React.FC<Props> = ({ data, loading, tenant, 
           );
         }}
       />
-      <Table.Column 
-        title="单价（元）" 
+      <Table.Column
+        title="单价（元）"
         dataIndex={["priceItem", "price"]}
         render={(value) => value ? moneyToString(value) : undefined}
       />
@@ -176,7 +159,7 @@ export const ManageJobBillingTable: React.FC<Props> = ({ data, loading, tenant, 
             children: (
               <Space>
                 <EditPriceModalLink
-                  nextId={nextId}
+                  nextId={data!.nextId}
                   cluster={r.cluster}
                   partition={r.partition}
                   qos={r.qos}
@@ -267,8 +250,8 @@ const EditPriceModal: React.FC<CommonModalProps & {
 
           />
         </Form.Item>
-        <Form.Item label="价格（元）" name="price" rules={[{ required: true }]}>
-          <InputNumber precision={3} min={0} defaultValue={0} />
+        <Form.Item label="价格（元）" name="price" initialValue={0} rules={[{ required: true }]}>
+          <InputNumber precision={3} min={0} />
         </Form.Item>
         <Form.Item label="备注" name="description">
           <Input />

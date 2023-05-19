@@ -10,13 +10,14 @@
  * See the Mulan PSL v2 for more details.
  */
 
+import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { compareDateTime, formatDateTime } from "@scow/lib-web/build/utils/datetime";
 import { compareNumber } from "@scow/lib-web/build/utils/math";
 import { queryToString } from "@scow/lib-web/build/utils/querystring";
 import type { AppSession } from "@scow/protos/build/portal/app";
-import { App, Button, Checkbox, Form, Popconfirm, Space, Table, TableColumnsType } from "antd";
+import { App, Button, Checkbox, Form, Popconfirm, Space, Table, TableColumnsType, Tooltip } from "antd";
 import type { CheckboxChangeEvent } from "antd/es/checkbox";
-import Router, { useRouter } from "next/router";
+import { useRouter } from "next/router";
 import { join } from "path";
 import React, { useCallback, useEffect, useState } from "react";
 import { useAsync } from "react-async";
@@ -47,6 +48,8 @@ export const AppSessionsTable: React.FC<Props> = () => {
 
   const cluster = publicConfig.CLUSTERS.find((x) => x.id === clusterQuery) ?? defaultClusterStore.cluster;
 
+  const [connectivityRefreshToken, setConnectivityRefreshToken] = useState(false);
+
   const { data, isLoading, reload } = useAsync({
     promiseFn: useCallback(async () => {
       // List all desktop
@@ -54,7 +57,7 @@ export const AppSessionsTable: React.FC<Props> = () => {
 
       return sessions.map((x) => ({
         ...x,
-        remainingTime: x.ready ? calculateAppRemainingTime(x.runningTime, x.timeLimit) : x.timeLimit,
+        remainingTime: x.state === "RUNNING" ? calculateAppRemainingTime(x.runningTime, x.timeLimit) : x.timeLimit,
       }));
 
     }, [cluster]),
@@ -84,6 +87,18 @@ export const AppSessionsTable: React.FC<Props> = () => {
     {
       title: "状态",
       dataIndex: "state",
+      render: (_, record) => (
+        record.reason ? (
+          <Tooltip title={record.reason}>
+            <Space>
+              {record.state}
+              <ExclamationCircleOutlined />
+            </Space>
+          </Tooltip>
+        ) : (
+          <span>{record.state}</span>
+        )
+      ),
       sorter: (a, b) => compareState (a.state, b.state)
         ? compareState (a.state, b.state) :
         compareNumber(a.jobId, b.jobId),
@@ -102,16 +117,17 @@ export const AppSessionsTable: React.FC<Props> = () => {
       render: (_, record) => (
         <Space>
           {
-            (record.ready) ? (
+            (record.state === "RUNNING") ? (
               <>
                 <ConnectTopAppLink
                   session={record}
                   cluster={cluster}
+                  refreshToken={connectivityRefreshToken}
                 />
                 <Popconfirm
                   title="确定结束这个任务吗？"
                   onConfirm={async () =>
-                    api.cancelJob({ body: {
+                    api.cancelJob({ query: {
                       cluster: cluster.id,
                       jobId: record.jobId,
                     } })
@@ -126,8 +142,27 @@ export const AppSessionsTable: React.FC<Props> = () => {
               </>
             ) : undefined
           }
+          {
+            (record.state === "PENDING" || record.state === "SUSPENDED") ? (
+              <Popconfirm
+                title="确定取消这个任务吗？"
+                onConfirm={async () =>
+                  api.cancelJob({ query: {
+                    cluster: cluster.id,
+                    jobId: record.jobId,
+                  } })
+                    .then(() => {
+                      message.success("任务取消请求已经提交！");
+                      reload();
+                    })
+                }
+              >
+                <a>取消</a>
+              </Popconfirm>
+            ) : undefined
+          }
           <a onClick={() => {
-            Router.push(join("/files", cluster.id, record.dataPath));
+            router.push(join("/files", cluster.id, record.dataPath));
           }}
           >
             进入目录
@@ -140,6 +175,11 @@ export const AppSessionsTable: React.FC<Props> = () => {
   const [checked, setChecked] = useState(true);
   const [disabled] = useState(false);
 
+  const reloadTable = useCallback(() => {
+    reload();
+    setConnectivityRefreshToken((f) => !f);
+  }, [reload, setConnectivityRefreshToken]);
+
   const onChange = (e: CheckboxChangeEvent) => {
     setChecked(e.target.checked);
   };
@@ -147,7 +187,7 @@ export const AppSessionsTable: React.FC<Props> = () => {
   useEffect(() => {
     if (checked) {
       const interval = setInterval(() => {
-        reload();
+        reloadTable();
       }, 10000);
       return () => clearInterval(interval);
     }
@@ -170,21 +210,22 @@ export const AppSessionsTable: React.FC<Props> = () => {
               <Button loading={isLoading} onClick={reload}>刷新</Button>
             </Space>
           </Form.Item>
-          <Checkbox
-            checked={checked}
-            disabled={disabled}
-            onChange={onChange}
-            style={{ lineHeight: "40px", marginLeft: "10px" }}
-          >
-            10s自动刷新
-          </Checkbox>
+          <Form.Item>
+            <Checkbox
+              checked={checked}
+              disabled={disabled}
+              onChange={onChange}
+            >
+              10s自动刷新
+            </Checkbox>
+          </Form.Item>
         </Form>
       </FilterFormContainer>
       <Table
         dataSource={data}
         columns={columns}
         rowKey={(record) => record.sessionId}
-        loading={isLoading}
+        loading={!data && isLoading}
       />
     </div>
   );

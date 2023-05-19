@@ -23,7 +23,7 @@ SCOW多集群管理设置：
 
 1. 所有export job服务共用同一个源数据库；
 
-1. 每个slurm集群有一个集群配置文件，即在`scow-deployment/config/clusters/`目录下每个集群有一个配置文件。
+1. 每个slurm集群有一个集群配置文件，即在`config/clusters`目录下每个集群有一个配置文件。
 
 :::
 
@@ -61,7 +61,7 @@ mgt_db_conf = {
 
 :::
 
-(2) 每个slurm集群有一个集群配置文件，即在`scow-deployment/config/clusters/`目录下每个集群有一个配置文件，如下所示：
+(2) 每个slurm集群有一个集群配置文件，即在`config/clusters`目录下每个集群有一个配置文件，如下所示：
 
 ```Bash
 # 集群显示名称
@@ -83,7 +83,7 @@ slurm:
       mem: 14000
       # 核心数
       cores: 4
-      # GPU数
+      # GPU卡数
       gpus: 0
       # QOS
       qos:

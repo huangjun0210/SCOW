@@ -57,6 +57,8 @@ export const JobTable: React.FC<Props> = ({
 
   const rangeSearch = useRef(true);
 
+  const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: 10 });
+
   const [query, setQuery] = useState<FilterForm>(() => {
     const now = dayjs();
     return {
@@ -68,26 +70,35 @@ export const JobTable: React.FC<Props> = ({
   });
 
   useDidUpdateEffect(() => {
+    setPageInfo({ page: 1, pageSize: pageInfo.pageSize });
     setQuery((q) => ({
       ...q,
       accountName: Array.isArray(accountNames) ? accountNames[0] : accountNames,
     }));
+
   }, [accountNames]);
 
   const [form] = Form.useForm<FilterForm>();
 
-  const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: 10 });
 
   const promiseFn = useCallback(async () => {
+    // 根据 rangeSearch.current来判断是批量/精确搜索，
+    // accountName 根据accountNames是否数组来判断顶部导航类型，如是用户空间用输入值，账户管理则用props中的accountNames限制搜索范围
+    const diffQuery = rangeSearch.current ? {
+      userId: userId || query.userId,
+      accountName: Array.isArray(accountNames) ? query.accountName : accountNames,
+      jobEndTimeStart: query.jobEndTime[0].toISOString(),
+      jobEndTimeEnd: query.jobEndTime[1].toISOString(),
+    } : {
+      userId: userId,
+      jobId: query.jobId,
+      accountName: Array.isArray(accountNames) ? undefined : accountNames,
+    };
     return await api.getJobInfo({ query: {
-      userId: rangeSearch.current ? (query.userId || userId || undefined) : undefined,
-      jobId: rangeSearch.current ? undefined : query.jobId,
+      ...diffQuery,
       page: pageInfo.page,
       pageSize: pageInfo.pageSize,
       clusters: query.clusters?.map((x) => x.id),
-      accountName: query.accountName || undefined,
-      jobEndTimeStart: query.jobEndTime[0].toISOString(),
-      jobEndTimeEnd: query.jobEndTime[1].toISOString(),
     } }).catch((e: HttpError) => {
       if (e.status === 403) {
         message.error("您没有权限查看此信息。");
@@ -107,10 +118,9 @@ export const JobTable: React.FC<Props> = ({
           form={form}
           initialValues={query}
           onFinish={async () => {
-            setQuery({
-              accountName: query.accountName,
-              ...(await form.validateFields()),
-            });
+            const currentQuery = await form.validateFields();
+            setQuery(currentQuery);
+            setPageInfo({ page: 1, pageSize: pageInfo.pageSize });
           }}
         >
           <FilterFormTabs
@@ -250,6 +260,7 @@ export const JobInfoTable: React.FC<JobInfoTableProps> = ({
         }
       </TableTitle>
       <Table
+        rowKey={(i) => i.cluster + i.biJobIndex + i.idJob}
         dataSource={data?.jobs}
         loading={isLoading}
         pagination={setPageInfo ? {

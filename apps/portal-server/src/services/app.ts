@@ -13,7 +13,7 @@
 import { plugin } from "@ddadaal/tsgrpc-server";
 import { ServiceError } from "@grpc/grpc-js";
 import { Status } from "@grpc/grpc-js/build/src/constants";
-import { AppType, getAppConfigs } from "@scow/config/build/app";
+import { AppType } from "@scow/config/build/app";
 import {
   AppCustomAttribute,
   appCustomAttribute_AttributeTypeFromJSON,
@@ -23,7 +23,7 @@ import {
   WebAppProps_ProxyType,
 } from "@scow/protos/build/portal/app";
 import { getClusterOps } from "src/clusterops";
-import { dnsResolve } from "src/utils/dns";
+import { getAppConfigs } from "src/config/apps";
 import { clusterNotFound } from "src/utils/errors";
 
 export const appServiceServer = plugin((server) => {
@@ -86,7 +86,7 @@ export const appServiceServer = plugin((server) => {
       }
 
       return [{
-        host: await dnsResolve(reply.host),
+        host: reply.host,
         port: reply.port,
         password: reply.password,
         appProps,
@@ -231,6 +231,22 @@ export const appServiceServer = plugin((server) => {
       const apps = getAppConfigs();
 
       return [{ apps: Object.keys(apps).map((x) => ({ id: x, name: apps[x].name })) }];
+    },
+
+    getAppLastSubmission: async ({ request, logger }) => {
+
+      const { userId, cluster, appId } = request;
+      const clusterops = getClusterOps(cluster);
+
+      if (!clusterops) { throw clusterNotFound(cluster); }
+
+      const reply = await clusterops.app.getAppLastSubmission({
+        userId, appId,
+      }, logger);
+
+      return [{
+        lastSubmissionInfo: reply.lastSubmissionInfo,
+      }];
     },
 
   });

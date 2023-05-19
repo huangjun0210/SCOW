@@ -1,6 +1,6 @@
 {
   "name": "@scow/lib-slurm",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "description": "",
   "main": "build/index.js",
   "private": true,
@@ -20,7 +20,7 @@
     "@scow/protos": "workspace:*"
   },
   "devDependencies": {
-    "node-ssh": "13.0.1",
+    "node-ssh": "13.1.0",
     "ts-log": "2.2.5"
   },
   "volta": {

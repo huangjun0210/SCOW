@@ -1,0 +1,55 @@
+{
+  "name": "@scow/cli",
+  "version": "0.6.0",
+  "description": "CLI to manage SCOW",
+  "main": "build/index.js",
+  "bin": "build/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "node -r ts-node/register -r tsconfig-paths/register src/index.ts",
+    "build": "rimraf build && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json && pkg --compress GZip --no-bytecode --public-packages \"*\" --public .",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@scow/lib-config": "workspace:*",
+    "pkg": "5.8.1",
+    "yargs": "17.7.2",
+    "prompts": "2.4.2",
+    "@sinclair/typebox": "0.28.10",
+    "js-yaml": "4.1.0",
+    "pino": "8.14.1",
+    "pino-pretty": "10.0.0",
+    "octokit": "2.0.14",
+    "jszip": "3.10.1",
+    "dotenv": "16.0.3",
+    "death": "1.1.0",
+    "https-proxy-agent": "6.1.0",
+    "node-fetch-commonjs": "3.2.4",
+    "@scow/config": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/yargs": "17.0.24",
+    "@types/prompts": "2.4.4",
+    "@types/js-yaml": "4.0.5",
+    "@types/death": "1.1.2"
+  },
+  "author": "PKUHPC (https://github.com/PKUHPC)",
+  "license": "Mulan PSL v2",
+  "repository": "https://github.com/PKUHPC/SCOW",
+  "keywords": [],
+  "volta": {
+    "extends": "../../package.json"
+  },
+  "pkg": {
+    "scripts": "build/**/*.js",
+    "assets": [
+      "assets/**/*",
+      "package.json"
+    ],
+    "targets": [
+      "node18-linux-x64",
+      "node18-linux-arm64"
+    ],
+    "outputPath": "exe"
+  }
+}

@@ -21,13 +21,19 @@ export enum NewUserGroupStrategy {
   "oneGroupForAllUsers" = "oneGroupForAllUsers"
 }
 
+export enum OtpStatusOptions {
+  "ldap" = "ldap",
+  "remote" = "remote",
+}
+
 export const LdapConfigSchema = Type.Object({
   url: Type.String({ description: "LDAP地址" }),
   searchBase: Type.String({ description: "从哪个节点搜索登录用户对应的LDAP节点" }),
   bindDN: Type.String({ description: "操作LDAP时以什么用户操作，默认为空字符串", default: "" }),
   bindPassword: Type.String({ description: "操作LDAP的用户的密码，默认为空字符串", default: "" }),
   userFilter: Type.String({ description: "LDAP用户筛选器" }),
-  addUser: Type.Object({
+  addUser: Type.Optional(Type.Object({
+    enabledForScow: Type.Boolean({ description: "是否允许从SCOW中创建用户", default: true }),
     userBase: Type.String({ description: "LDAP增加用户节点时，把用户增加到哪个节点下" }),
     homeDir: Type.String({
       description: "LDAP增加用户时，用户的homeDirectory值。使用{{ userId }}代替新用户的用户名",
@@ -56,7 +62,7 @@ export const LdapConfigSchema = Type.Object({
       如果不填写，则使用ldap.attrs.uid的值
       ` })),
       extraProps: Type.Optional(Type.Record(
-        Type.String(), 
+        Type.String(),
         Type.Union([Type.Null(), Type.String(), Type.Array(Type.String())],
           {
             description: `
@@ -95,7 +101,7 @@ export const LdapConfigSchema = Type.Object({
           例如：{ sn: "{{ cn }}" }，那么添加时将会增加一个sn属性，其值为cn的属性，即为用户输入的姓名
         `,
         })),
-  }, { description: "添加用户的配置" }),
+  }, { description: "添加用户的配置" })),
   attrs: Type.Object({
     uid: Type.String({ description: "LDAP中对应用户的id的属性名。" }),
     name: Type.Optional(Type.String({ description: `
@@ -119,7 +125,45 @@ export const SshConfigSchema = Type.Object({
   baseNode: Type.Optional(Type.String({ description: "SSH认证中，以哪个节点为认证用户的基础。如果不设置则为第一个集群的第一个登录节点" })),
 }, { description: "SSH配置", default: {} });
 
+export const OtpLdapSchema = Type.Object({
+  bindLimitMinutes: Type.Integer({ description: "限制绑定otp要在多少分钟内完成", default: 10 }),
+  scowHost: Type.String({ description: "scow的ip地址或者域名，用来组成发送邮件地址" }),
+  secretAttributeName: Type.String({ description: "存储otp密钥的属性名", default: "otpSecret" }),
+  qrcodeDescription: Type.String({ description: "secret二维码上方文字描述信息", default: "此二维码仅出现一次，用过即毁" }),
+  label:  Type.String({ description: "otp验证软件扫描二维码之后，出现的label中，用户名和@后显示的名称", default: "SCOW" }),
+  authenticationMethod: Type.Object({
+    mail: Type.Object({
+      sendEmailFrequencyLimitInSeconds: Type.Integer({ description: "发送邮件频率限制", default: 60 }),
+      from: Type.String({ description: "发件邮箱地址" }),
+      subject: Type.String({ description: "邮件主题", default: "OTP绑定链接" }),
+      title: Type.String({ description: "邮件内容标题", default: "Bind OTP" }),
+      contentText: Type.String({ description: "邮件内容",
+        default: "Please click on the following link to bind your OTP:" }),
+      labelText: Type.String({ description: "标签点击文字", default: "Bind OTP" }),
+      mailTransportInfo: Type.Object({
+        host: Type.String({ description: "SMTP服务器" }),
+        secure: Type.Boolean({ description: "是否启用SSL/TSL加密", default: false }),
+        port: Type.Integer({ description: "服务器端口" }),
+        user: Type.String({ description: "SMTP身份验证用户名" }),
+        password: Type.String({ description: "SMTP身份验证授权码" }),
+      }),
+    }, { description: "发送邮件的配置信息" }),
+  }, { description: "发送绑定链接相关配置" }),
+}, { description: "将otp密钥存在ldap需要配置信息" });
+
+export const OtpConfigSchema = Type.Object({
+  enabled: Type.Boolean({ description: "是否启用otp", default: false }),
+  type: Type.Optional(Type.Enum(OtpStatusOptions, { description: "otp功能状态" })),
+  ldap: Type.Optional(OtpLdapSchema),
+  remote: Type.Optional(Type.Object({
+    validateUrl: Type.String({ description: "远程验证otp码的url" }),
+    redirectUrl: Type.Optional(Type.String({ description: "当用户点击绑定OTP时，302重定向的链接" })),
+  }, { description: "将密钥存在远程地址时的配置信息" })),
+}, { description: "otp功能配置" });
+
 export type SshConfigSchema = Static<typeof SshConfigSchema>;
+export type OtpLdapSchema = Static<typeof OtpLdapSchema>;
+export type OtpConfigSchema = Static<typeof OtpConfigSchema>;
 
 export const AuthConfigSchema = Type.Object({
   redisUrl: Type.String({ description: "存放token的redis地址", default: "redis:6379" }),
@@ -128,45 +172,73 @@ export const AuthConfigSchema = Type.Object({
   ldap: Type.Optional(LdapConfigSchema),
   ssh: Type.Optional(SshConfigSchema),
   allowedCallbackHostnames: Type.Array(Type.String({ description: "信任的回调域名" }), { default: []}),
+  mockUsers: Type.Optional(Type.Record(
+    Type.String(), Type.String(),
+    { description: "模仿用户，如果登录的用户的ID为某个key，则改为以对应的value的用户登录。修改此配置无需重启认证系统" },
+  )),
   captcha: Type.Object({
     enabled: Type.Boolean({ description: "验证码功能是否启用", default: false }),
   }, { default: {} }),
+  otp: Type.Optional(OtpConfigSchema),
 });
 
 export type AuthConfigSchema = Static<typeof AuthConfigSchema>;
 
 export const AUTH_CONFIG_FILE = "auth";
 
-export const authConfig = getConfigFromFile(AuthConfigSchema, AUTH_CONFIG_FILE, DEFAULT_CONFIG_BASE_PATH);
+export const getAuthConfig = () => {
+  const config = getConfigFromFile(AuthConfigSchema, AUTH_CONFIG_FILE, DEFAULT_CONFIG_BASE_PATH);
 
-// validate the config
-function validateConfig(config: AuthConfigSchema) {
+  // validate
   if (config.authType === "ldap") {
     if (!config.ldap) {
       throw new Error("authType is set to ldap, but ldap config is not set");
     }
 
-    if (config.ldap.addUser.groupStrategy === NewUserGroupStrategy.newGroupPerUser
+    if (config.ldap.addUser) {
+
+
+      if (config.ldap.addUser.groupStrategy === NewUserGroupStrategy.newGroupPerUser
     && !config.ldap.addUser.newGroupPerUser) {
-      throw new Error(`
+        throw new Error(`
       ldap.addUser.groupStrategy is set to ${NewUserGroupStrategy.newGroupPerUser} is set to ldap,
       but ldap.addUser.groupStrategy.newGroupPerUser config is not set`,
-      );
-    }
+        );
+      }
 
-    if (config.ldap.addUser.groupStrategy === NewUserGroupStrategy.oneGroupForAllUsers
+      if (config.ldap.addUser.groupStrategy === NewUserGroupStrategy.oneGroupForAllUsers
     && !config.ldap.addUser.oneGroupForAllUsers) {
-      throw new Error(`
+        throw new Error(`
       ldap.addUser.groupStrategy is set to ${NewUserGroupStrategy.oneGroupForAllUsers} is set to ldap,
       but ldap.addUser.groupStrategy.oneGroupFroAllUsers config is not set`,
-      );
+        );
+      }
     }
-
   }
 
   if (config.authType === AuthType.ssh && !config.ssh) {
-    throw new Error("authType is set to ldap, but ldap config is not set");
+    throw new Error("authType is set to ssh, but ssh config is not set");
   }
-}
 
-validateConfig(authConfig);
+  if (config.otp?.enabled) {
+    if (!config.otp.type) {
+      throw new Error("config.otp.enabled is set to true, but config.otp.type is not to set");
+    }
+    if (config.otp?.type === OtpStatusOptions.ldap && !config.otp?.ldap) {
+      throw new Error("otp status is set to ldap, but otp.ldap config is not set");
+    }
+    if (config.otp?.type === OtpStatusOptions.ldap && !config.ldap?.attrs.mail) {
+      throw new Error("otp status is set to ldap, but ldap.attrs.mail is not set");
+    }
+    if (config.otp?.type === OtpStatusOptions.remote && !config.otp?.remote) {
+      throw new Error("otp status is set to remote, but otp.remote config is not set");
+    }
+    if (config.authType === AuthType.ssh && config.otp?.type === OtpStatusOptions.ldap) {
+      throw new Error("When authType is set to ssh, otp.type can only be set to remote");
+    }
+  }
+
+  return config;
+};
+
+export const authConfig = getAuthConfig();

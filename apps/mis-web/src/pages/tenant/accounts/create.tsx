@@ -19,14 +19,14 @@ import { requireAuth } from "src/auth/requireAuth";
 import { PageTitle } from "src/components/PageTitle";
 import { TenantRole } from "src/models/User";
 import { publicConfig } from "src/utils/config";
-import { userIdRule } from "src/utils/form";
+import { getUserIdRule } from "src/utils/createUser";
 import { Head } from "src/utils/head";
 
 interface FormProps {
   ownerId: string;
   ownerName: string;
   accountName: string;
-  comment: string;
+  comment?: string;
 }
 
 
@@ -51,6 +51,8 @@ const CreateAccountForm: React.FC = () => {
       })
       .finally(() => setLoading(false));
   };
+
+  const userIdRule = getUserIdRule();
 
   return (
     <Form
@@ -77,7 +79,7 @@ const CreateAccountForm: React.FC = () => {
         label="拥有者用户ID"
         rules={[
           { required: true },
-          userIdRule,
+          ...userIdRule ? [userIdRule] : [],
         ]}
 
       >
@@ -90,7 +92,7 @@ const CreateAccountForm: React.FC = () => {
       >
         <Input />
       </Form.Item>
-      <Form.Item<FormProps> name="comment" label="备注" required>
+      <Form.Item<FormProps> name="comment" label="备注">
         <Input.TextArea />
       </Form.Item>
       <Form.Item wrapperCol={{ span: 6, offset: 4 }}>

@@ -55,6 +55,12 @@ export enum UserStatus {
   BLOCKED = 1,
 }
 
+export enum ClusterAccountInfo_ImportStatus {
+  EXISTING = 0,
+  NOT_EXISTING = 1,
+  HAS_NEW_USERS = 2,
+}
+
 export const AccountAffiliationSchema = Type.Object({
   accountName: Type.String(),
   role: Type.Enum(UserRole),
@@ -65,7 +71,7 @@ export type AccountAffiliation = Static<typeof AccountAffiliationSchema>;
 
 export const UserInfoSchema = Type.Object({
   tenant: Type.String(),
-  name: Type.String(),
+  name: Type.Optional(Type.String()),
   identityId: Type.String(),
   accountAffiliations: Type.Array(AccountAffiliationSchema),
   tenantRoles: Type.Array(Type.Enum(TenantRole)),

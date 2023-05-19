@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
-import { InboxOutlined } from "@ant-design/icons";
+import { DeleteOutlined, InboxOutlined } from "@ant-design/icons";
 import { App, Button, Modal, Upload } from "antd";
 import { join } from "path";
 import { api } from "src/apis";
@@ -53,6 +53,13 @@ export const UploadModal: React.FC<Props> = ({ open, onClose, path, reload, clus
         multiple
         action={async (file) => urlToUpload(cluster, join(path, file.name))}
         withCredentials
+        showUploadList={{
+          removeIcon: (file) => {
+            return (
+              <DeleteOutlined title={file.status === "uploading" ? "取消上传" : "删除上传记录"} />
+            );
+          },
+        }}
         onChange={({ file }) => {
           if (file.status === "done") {
             message.success(`${file.name}上传成功`);
@@ -72,7 +79,7 @@ export const UploadModal: React.FC<Props> = ({ open, onClose, path, reload, clus
                 onOk: async () => {
                   const fileType = await api.getFileType({ query:{ cluster: cluster, path: join(path, file.name) } });
                   const deleteOperation = fileType.type === "dir" ? api.deleteDir : api.deleteFile;
-                  await deleteOperation({ body: { cluster: cluster, path: join(path, file.name) } })
+                  await deleteOperation({ query: { cluster: cluster, path: join(path, file.name) } })
                     .then(() => resolve(file));
                 },
                 onCancel: () => { reject(file); },

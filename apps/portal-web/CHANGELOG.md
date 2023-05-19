@@ -1,5 +1,14 @@
 # @scow/portal-web
 
+## 0.7.0
+
+### Patch Changes
+
+- f74d6c6: 修复文件列表文件标题不可点击问题
+- 27d346f: 修复 portal-web 项目 API 路径没有正确添加 base path 的问题
+- Updated dependencies [0f64e54]
+  - @scow/config@0.3.1
+
 ## 0.6.0
 
 ### Patch Changes

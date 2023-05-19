@@ -1,5 +1,14 @@
 # @scow/mis-server
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [0f64e54]
+  - @scow/config@0.3.1
+  - @scow/lib-hook@0.2.1
+  - @scow/lib-server@0.2.0
+
 ## 0.6.0
 
 ### Minor Changes

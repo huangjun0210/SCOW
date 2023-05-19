@@ -1,5 +1,15 @@
 # @scow/docs
 
+## 0.5.0
+
+### Minor Changes
+
+- 548bce7: 支持 CLI 插件
+
+### Patch Changes
+
+- 0f64e54: 获取桌面和应用列表时，不再解析节点域名到 IP
+
 ## 0.4.0
 
 ### Minor Changes
